@@ -172,6 +172,41 @@ class WalkingModule:
     std::mutex m_mutex; /**< Mutex. */
 
     iDynTree::Vector2 m_desiredPosition;
+    
+    ////// IMU parameters
+    bool m_useHeadIMU;
+    bool m_useFeetIMU;
+    std::string m_imuHeadFrame;
+    std::string m_imuRFootFrame;
+    std::string m_imuLFootFrame;
+    
+    bool m_useIMUFiltering;
+    std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_HeadIMUFilter;
+    std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_RFootIMUFilter;
+    std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_LFootIMUFilter;
+    double m_IMUFilterFreq;
+    double m_IMUThreshold;
+    double m_IMUSmoothingTime;
+    
+    // IMU ports
+    yarp::os::BufferedPort<yarp::os::Bottle> m_RFootIMUPort;
+    yarp::os::BufferedPort<yarp::os::Bottle> m_LFootIMUPort;
+    yarp::os::BufferedPort<yarp::sig::Vector> m_HeadIMUPort;
+    // NOTE: For simulation the ports are different due to different structure of the streamed data
+    yarp::os::BufferedPort<yarp::sig::Vector> m_RFootIMUPortSim;
+    yarp::os::BufferedPort<yarp::sig::Vector> m_LFootIMUPortSim;
+    
+    // IMU data
+    yarp::sig::Vector m_HeadIMUData;
+    yarp::sig::Vector m_RFootIMUData;
+    yarp::sig::Vector m_LFootIMUData;
+    
+    // Useful orientations computed from IMU
+    iDynTree::Rotation m_rotRFootIMU;
+    iDynTree::Rotation m_rotLFootIMU;
+    iDynTree::Rotation m_IMUToFT;
+    iDynTree::Rotation m_rotEarthToWorld; // orientation between the inertial of the earth according to the IMU and the world frame
+    
 
     // debug
     std::unique_ptr<iCub::ctrl::Integrator> m_velocityIntegral{nullptr};
@@ -190,6 +225,13 @@ class WalkingModule:
      * @return true in case of success and false otherwise.
      */
     bool configureRobot(const yarp::os::Searchable& config);
+    
+    /**
+     * Configure the IMU.
+     * @param config is the reference to a resource finder object.
+     * @return true in case of success and false otherwise.
+     */
+    bool configureIMU(const yarp::os::Searchable& config);
 
     /**
      * Get the name of the controlled joints from the resource finder

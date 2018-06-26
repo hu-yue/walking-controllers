@@ -22,6 +22,7 @@
 #include <iDynTree/yarp/YARPConversions.h>
 #include <iDynTree/yarp/YARPEigenConversions.h>
 #include <iDynTree/Model/Model.h>
+#include "iDynTree/yarp/YARPConfigurationsLoader.h"
 
 #include "WalkingModule.hpp"
 #include "Utils.hpp"
@@ -378,6 +379,79 @@ bool WalkingModule::configureForceTorqueSensors(const yarp::os::Searchable& conf
     return true;
 }
 
+bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
+{
+    // check IMU configurations
+    m_useHeadIMU = config.check("useHeadIMU", yarp::os::Value(false)).asBool();
+    m_useFeetIMU = config.check("useFeetIMU", yarp::os::Value(false)).asBool();
+    
+    if(m_useHeadIMU)
+    {
+      m_HeadIMUPort.open("/" + getName() + "/inertial:i");
+      std::string headPortName = config.check("IMUHeadPort", yarp::os::Value("/inertial")).asString();
+      if(!yarp::os::Network::connect("/" + m_robot + headPortName, "/" + getName() + "/inertial:i"))
+      {
+        yError() << "Unable to connect to port " << "/" + m_robot + headPortName;
+        return false;
+      }
+      
+      m_imuHeadFrame = config.check("IMUHead", yarp::os::Value("imu_frame")).asString();
+    }
+    
+    if(m_useFeetIMU)
+    {
+      std::string RPortName = config.check("IMURightFootPort", yarp::os::Value("/right_foot/imu/measures:o")).asString();
+      std::string LPortName = config.check("IMULeftFootPort", yarp::os::Value("/left_foot/imu/measures:o")).asString();
+      if(m_robot.compare("icubSim"))
+      {
+        m_RFootIMUPortSim.open("/" + getName() + "/right_foot/measures:i");
+        m_LFootIMUPortSim.open("/" + getName() + "/left_foot/measures:i");
+      }
+      else 
+      {
+        m_RFootIMUPort.open("/" + getName() + "/right_foot/measures:i");
+        m_LFootIMUPort.open("/" + getName() + "/left_foot/measures:i");
+      }
+      if(!yarp::os::Network::connect("/" + m_robot + RPortName, "/" + getName() + "/right_foot/measures:i"))
+      {
+        yError() << "Unable to connect to port " << "/" + m_robot + RPortName;
+        return false;
+      }
+      if(!yarp::os::Network::connect("/" + m_robot + LPortName, "/" + getName() + "/left_foot/measures:i"))
+      {
+        yError() << "Unable to connect to port " << "/" + m_robot + LPortName;
+        return false;
+      }
+      
+      m_imuRFootFrame = config.check("IMURightFoot", yarp::os::Value("r_foot_ft_sensor")).asString();
+      m_imuLFootFrame = config.check("IMULeftFoot", yarp::os::Value("l_foot_ft_sensor")).asString();
+      
+      m_IMUToFT = iDynTree::Rotation::Identity();
+      if(!iDynTree::parseRotationMatrix(config, "IMUToFT", m_IMUToFT)){
+        m_IMUToFT = iDynTree::Rotation::Identity();
+        yInfo() << "Using the identity as desired rotation for the additional frame";
+      }
+    }
+    
+    if(m_useFeetIMU || m_useHeadIMU)
+    {
+      m_IMUThreshold = config.check("tiltThreshold", yarp::os::Value(2)).asDouble();
+      m_IMUSmoothingTime = config.check("smoothingTime", yarp::os::Value(0.5)).asDouble();
+      m_useIMUFiltering=config.check("useIMUFiltering", yarp::os::Value(true)).asBool();
+      if(m_useIMUFiltering)
+      {
+        m_IMUFilterFreq = config.check("filterFreq", yarp::os::Value(25)).asDouble();
+        if(m_useHeadIMU)
+          m_HeadIMUFilter = std::make_unique<iCub::ctrl::FirstOrderLowPassFilter>(m_IMUFilterFreq, m_dT);
+        if(m_useFeetIMU)
+        {
+          m_RFootIMUFilter = std::make_unique<iCub::ctrl::FirstOrderLowPassFilter>(m_IMUFilterFreq, m_dT);
+          m_LFootIMUFilter = std::make_unique<iCub::ctrl::FirstOrderLowPassFilter>(m_IMUFilterFreq, m_dT);
+        }
+      }
+    }
+}
+
 bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
 {
     // module name (used as prefix for opened ports)
@@ -410,6 +484,16 @@ bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
     {
         yError() << "[configure] Unable to configure the robot.";
         return false;
+    }
+    
+    yarp::os::Bottle& IMUOptions = rf.findGroup("IMU");
+    if(IMUOptions.size() > 0)
+    {
+      if(!configureIMU(IMUOptions))
+      {
+        yError() << "[configure] Unable to configure the IMU.";
+        return false;
+      }
     }
 
     yarp::os::Bottle& generalOptions = rf.findGroup("GENERAL");
@@ -598,11 +682,40 @@ bool WalkingModule::close()
     m_rightWrenchFilter.reset(nullptr);
     m_positionFilter.reset(nullptr);
     m_velocityFilter.reset(nullptr);
+    
+    if(m_useIMUFiltering)
+    {
+      if(m_useHeadIMU)
+        m_HeadIMUFilter.reset(nullptr);
+      
+      if(m_useFeetIMU)
+      {
+        m_RFootIMUFilter.reset(nullptr);
+        m_LFootIMUFilter.reset(nullptr);
+      }
+    }
 
     // close the ports
     m_rpcPort.close();
     m_rightWrenchPort.close();
     m_leftWrenchPort.close();
+    
+    if(m_useHeadIMU)
+      m_HeadIMUPort.close();
+    
+    if(m_useFeetIMU)
+    {
+      if(m_robot.compare("icubSim") == 0)
+      {
+        m_RFootIMUPortSim.close();
+        m_LFootIMUPortSim.close();
+      }
+      else
+      {
+        m_RFootIMUPort.close();
+        m_LFootIMUPort.close();
+      }
+    }
 
     return true;
 }
