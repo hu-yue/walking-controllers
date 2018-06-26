@@ -201,11 +201,18 @@ class WalkingModule:
     yarp::sig::Vector m_RFootIMUData;
     yarp::sig::Vector m_LFootIMUData;
     
+    yarp::sig::Vector m_HeadIMUDataFilt;
+    yarp::sig::Vector m_RFootIMUDataFilt;
+    yarp::sig::Vector m_LFootIMUDataFilt;
+    
     // Useful orientations computed from IMU
+    iDynTree::Rotation m_rotRFTToSole;
+    iDynTree::Rotation m_rotLFTToSole;
     iDynTree::Rotation m_rotRFootIMU;
     iDynTree::Rotation m_rotLFootIMU;
     iDynTree::Rotation m_IMUToFT;
-    iDynTree::Rotation m_rotEarthToWorld; // orientation between the inertial of the earth according to the IMU and the world frame
+    iDynTree::Rotation m_rotLEarthToWorld; // orientation between the inertial of the earth according to the IMU and the world frame
+    iDynTree::Rotation m_rotREarthToWorld;
     
 
     // debug
@@ -384,6 +391,13 @@ class WalkingModule:
      * @return true/false in case of success/failure.
      */
     bool updateTrajectories(const size_t& mergePoint);
+    
+    
+    // IMU functions
+    bool computeEarthToWorld(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
+    bool computeFeetOrientation(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
+    bool updateInertiaRWorld();
+    bool parseIMUData();
 
 public:
 

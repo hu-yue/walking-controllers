@@ -449,6 +449,21 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
           m_LFootIMUFilter = std::make_unique<iCub::ctrl::FirstOrderLowPassFilter>(m_IMUFilterFreq, m_dT);
         }
       }
+      
+      // Initialize data
+      m_rotRFTToSole = iDynTree::Rotation::Identity();
+      m_rotLFTToSole = iDynTree::Rotation::Identity();
+      m_rotRFootIMU = iDynTree::Rotation::Identity();
+      m_rotLFootIMU = iDynTree::Rotation::Identity();
+      m_IMUToFT = iDynTree::Rotation::Identity();
+      m_rotLEarthToWorld = iDynTree::Rotation::Identity(); // orientation between the inertial of the earth according to the IMU and the world frame
+      m_rotREarthToWorld = iDynTree::Rotation::Identity();
+      m_HeadIMUData.resize(3);
+      m_HeadIMUData.zero();
+      m_RFootIMUData.resize(3);
+      m_LFootIMUData.resize(3);
+      m_RFootIMUData.zero();
+      m_LFootIMUData.zero();
     }
 }
 
@@ -2270,3 +2285,113 @@ bool WalkingModule::onTheFlyStartWalking(const double smoothingTime)
 
     return true;
 }
+
+// This function is called only once at the beginning of the walking
+bool WalkingModule::computeEarthToWorld(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR)
+{
+  iDynTree::Rotation lSoleToBase = m_FKSolver->getLeftFootToWorldTransform().getRotation();
+  iDynTree::Rotation m_rotLFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getLeftFootFrame(),m_imuLFootFrame).getRotation();
+  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataL(0)),iDynTree::deg2rad(imudataL(1)),iDynTree::deg2rad(imudataL(2)));
+  m_rotLEarthToWorld = lSoleToBase*m_rotLFTToSole*m_IMUToFT*lIMUtoEarth.inverse();
+  
+  iDynTree::Rotation rSoleToBase = m_FKSolver->getRightFootToWorldTransform().getRotation();
+  iDynTree::Rotation m_rotRFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getRightFootFrame(),m_imuRFootFrame).getRotation();
+  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataR(0)),iDynTree::deg2rad(imudataR(1)),iDynTree::deg2rad(imudataR(2)));
+  m_rotREarthToWorld = rSoleToBase*m_rotRFTToSole*m_IMUToFT*rIMUtoEarth.inverse();
+}
+
+bool WalkingModule::computeFeetOrientation(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR)
+{  
+  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataL(0)),iDynTree::deg2rad(imudataL(1)),iDynTree::deg2rad(imudataL(2)));
+  m_rotRFootIMU = m_rotLEarthToWorld*lIMUtoEarth*m_IMUToFT.inverse()*m_rotLFTToSole.inverse();
+  
+  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataR(0)),iDynTree::deg2rad(imudataR(1)),iDynTree::deg2rad(imudataR(2)));
+  m_rotRFootIMU = m_rotREarthToWorld*rIMUtoEarth*m_IMUToFT.inverse()*m_rotRFTToSole.inverse();
+}
+
+bool WalkingModule::updateInertiaRWorld()
+{    
+  // if the two feet are on the same plane
+  
+  
+  // if the two feet are not on the same plane
+  
+  m_inertial_R_worldFrame = iDynTree::Rotation::RPY(0.0, 0.0, 0.0);
+}
+
+bool WalkingModule::parseIMUData()
+{
+  // read IMU data  
+  yarp::sig::Vector imuHeadInput = *m_HeadIMUPort.read(false);
+  if(imuHeadInput.size() == 0)
+  {
+    yError() << "Could not read head IMU data.";
+    return false;
+  }
+  
+  for(int i = 0; i < m_HeadIMUData.size(); i++)
+    m_HeadIMUData[i] = imuHeadInput(i);
+  
+  if(m_robot.compare("icubSim") == 0)
+  {
+    yarp::sig::Vector imuRInput = *m_RFootIMUPortSim.read(false);
+    yarp::sig::Vector imuLInput = *m_LFootIMUPortSim.read(false);
+    
+    if(imuRInput.size() == 0)
+    {
+      yError() << "Could not read right foot IMU data.";
+      return false;
+    }
+    if(imuRInput.size() == 0)
+    {
+      yError() << "Could not read left foot IMU data.";
+      return false;
+    }
+    
+    for(int i = 0; i < m_RFootIMUData.size(); i++)
+    {
+      m_RFootIMUData[i] = imuRInput(i);
+      m_LFootIMUData[i] = imuLInput(i);
+    }
+  } 
+  else
+  {
+    yarp::os::Bottle imuRInput = *m_RFootIMUPort.read(false)->get(3).asList()->get(0).asList()->get(0).asList();
+    yarp::os::Bottle imuLInput = *m_LFootIMUPort.read(false)->get(3).asList()->get(0).asList()->get(0).asList();
+
+    if(imuRInput.size() == 0)
+    {
+      yError() << "Could not read right foot IMU data.";
+      return false;
+    }
+    if(imuRInput.size() == 0)
+    {
+      yError() << "Could not read left foot IMU data.";
+      return false;
+    }
+    
+    m_RFootIMUData[0] = -imuRInput.get(1).asDouble();
+    m_RFootIMUData[1] = -imuRInput.get(2).asDouble();
+    m_RFootIMUData[2] = -imuRInput.get(0).asDouble();
+    m_LFootIMUData[0] = -imuLInput.get(1).asDouble();
+    m_LFootIMUData[1] = -imuLInput.get(2).asDouble();
+    m_LFootIMUData[2] = -imuLInput.get(0).asDouble();
+  }
+  
+  if(m_useIMUFiltering)
+  {
+    if(m_firstStep)
+    {
+      m_HeadIMUFilter->init(m_HeadIMUData);
+      m_LFootIMUFilter->init(m_LFootIMUData);
+      m_RFootIMUFilter->init(m_RFootIMUData);
+    }
+    
+    m_HeadIMUDataFilt = m_HeadIMUFilter->filt(m_HeadIMUData);
+    m_LFootIMUDataFilt = m_LFootIMUFilter->filt(m_LFootIMUData);
+    m_RFootIMUDataFilt = m_RFootIMUFilter->filt(m_RFootIMUData);
+  }
+  
+  return true;
+}
+

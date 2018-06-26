@@ -423,6 +423,12 @@ iDynTree::Transform WalkingFK::getRootLinkToWorldTransform()
     return m_kinDyn.getWorldTransform(m_frameRootIndex);
 }
 
+
+iDynTree::Transform WalkingFK::getTransformBetweenFrames(std::string frameA, std::string frameB)
+{
+  return m_kinDyn.getRelativeTransform(frameA,frameB);
+}
+
 iDynTree::Twist WalkingFK::getRootLinkVelocity()
 {
     return m_kinDyn.getFrameVel(m_frameRootIndex);
