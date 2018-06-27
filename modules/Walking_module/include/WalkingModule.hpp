@@ -176,6 +176,7 @@ class WalkingModule:
     ////// IMU parameters
     bool m_useHeadIMU;
     bool m_useFeetIMU;
+    bool m_useIMUDS;
     std::string m_imuHeadFrame;
     std::string m_imuRFootFrame;
     std::string m_imuLFootFrame;
@@ -185,7 +186,8 @@ class WalkingModule:
     std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_RFootIMUFilter;
     std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_LFootIMUFilter;
     double m_IMUFilterFreq;
-    double m_IMUThreshold;
+    double m_IMUThresholdPitch;
+    double m_IMUThresholdRoll;
     double m_IMUSmoothingTime;
     
     // IMU ports
@@ -208,9 +210,11 @@ class WalkingModule:
     // Useful orientations computed from IMU
     iDynTree::Rotation m_rotRFTToSole;
     iDynTree::Rotation m_rotLFTToSole;
+    iDynTree::Rotation m_rotHeadIMU;
     iDynTree::Rotation m_rotRFootIMU;
     iDynTree::Rotation m_rotLFootIMU;
     iDynTree::Rotation m_IMUToFT;
+    iDynTree::Rotation m_rotHeadEarthToWorld;
     iDynTree::Rotation m_rotLEarthToWorld; // orientation between the inertial of the earth according to the IMU and the world frame
     iDynTree::Rotation m_rotREarthToWorld;
     
@@ -396,7 +400,9 @@ class WalkingModule:
     // IMU functions
     bool computeEarthToWorld(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
     bool computeFeetOrientation(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
-    bool updateInertiaRWorld();
+    bool computeEarthToWorldHead(iDynTree::Vector3 imudata);
+    bool computeHeadOrientation(iDynTree::Vector3 imudata);
+    bool updateInertiaRWorld(iDynTree::Vector3 imudataHead, iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
     bool parseIMUData();
 
 public:

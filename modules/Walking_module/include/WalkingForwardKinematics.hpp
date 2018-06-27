@@ -183,6 +183,12 @@ public:
      * @return frameA_H_frameB.
      */
     iDynTree::Transform getTransformBetweenFrames(std::string frameA, std::string frameB);
+    
+    /**
+     * Return the transformation between any two frames.
+     * @return world_H_frame.
+     */
+    iDynTree::Transform getFrameToWorldTransform(std::string frame);
 
     /**
      * Return the root link velocity.
