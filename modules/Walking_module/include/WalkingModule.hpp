@@ -48,6 +48,7 @@
 #include "thrifts/WalkingCommands.h"
 
 enum class WalkingFSM {Idle, Configured, Prepared, Walking, OnTheFly, Stance};
+enum class WalkingStatus {SS, DS};
 
 /**
  * RFModule of the 2D-DCM dynamics model.
@@ -188,6 +189,7 @@ class WalkingModule:
     double m_IMUFilterFreq;
     double m_IMUThresholdPitch;
     double m_IMUThresholdRoll;
+    double m_IMUPlaneThreshold;
     double m_IMUSmoothingTime;
     
     // IMU ports
@@ -398,11 +400,11 @@ class WalkingModule:
     
     
     // IMU functions
-    bool computeEarthToWorld(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
-    bool computeFeetOrientation(iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
-    bool computeEarthToWorldHead(iDynTree::Vector3 imudata);
-    bool computeHeadOrientation(iDynTree::Vector3 imudata);
-    bool updateInertiaRWorld(iDynTree::Vector3 imudataHead, iDynTree::Vector3 imudataL, iDynTree::Vector3 imudataR);
+    bool computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
+    bool computeFeetOrientation(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
+    bool computeEarthToWorldHead(yarp::sig::Vector imudata);
+    bool computeHeadOrientation(yarp::sig::Vector imudata);
+    bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool parseIMUData();
 
 public:
