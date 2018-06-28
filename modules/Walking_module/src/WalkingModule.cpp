@@ -471,6 +471,9 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
         }
       }
       
+      m_useFTDetection = config.check("useFTDetection", yarp::os::Value(false)).asBool();
+      m_FTThreshold = config.check("FTThreshold", yarp::os::Value(20)).asDouble();
+      
       // Initialize data
       m_rotRFTToSole = iDynTree::Rotation::Identity();
       m_rotLFTToSole = iDynTree::Rotation::Identity();
@@ -491,6 +494,7 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_LFootIMUDataFilt.resize(3);
       m_RFootIMUDataFilt.zero();
       m_LFootIMUDataFilt.zero();
+      m_walkingStatus = WalkingStatus::Unknown;
     }
     
     return true;
@@ -840,28 +844,6 @@ bool WalkingModule::updateModule()
        || m_robotState == WalkingFSM::Stance
        || m_robotState == WalkingFSM::OnTheFly)
     {
-        if(m_useHeadIMU || m_useFeetIMU)
-        {
-          parseIMUData();
-          if(m_useHeadIMU)
-          {
-            if(m_useIMUFiltering)
-              computeEarthToWorldHead(m_HeadIMUDataFilt);
-            else
-              computeEarthToWorldHead(m_HeadIMUData);
-          }
-          if(m_useFeetIMU)
-          {
-            if(m_useIMUFiltering)
-              computeEarthToWorld(m_LFootIMUDataFilt,m_RFootIMUDataFilt);
-            else
-              computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
-          }
-          if(m_useIMUFiltering)
-            updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
-          else
-            updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
-        }
       
         iDynTree::Vector2 measuredDCM, measuredZMP;
         iDynTree::Position measuredCoM;
@@ -924,6 +906,39 @@ bool WalkingModule::updateModule()
         {
             yError() << "[updateModule] Unable to get the feedback.";
             return false;
+        }
+        
+        if(m_useHeadIMU || m_useFeetIMU)
+        {
+          checkWalkingStatus();
+          if(m_walkingStatus == WalkingStatus::Unknown)
+          {
+            yError() << "[IMU] Unknown walking status!";
+            return false;
+          }
+          
+          if(((m_useIMUDS && m_walkingStatus == WalkingStatus::DS) || !m_useIMUDS))
+          {
+            parseIMUData();
+            if(m_useHeadIMU)
+            {
+              if(m_useIMUFiltering)
+                computeEarthToWorldHead(m_HeadIMUDataFilt);
+              else
+                computeEarthToWorldHead(m_HeadIMUData);
+            }
+            if(m_useFeetIMU)
+            {
+              if(m_useIMUFiltering)
+                computeEarthToWorld(m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+              else
+                computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
+            }
+            if(m_useIMUFiltering)
+              updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+            else
+              updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+          }
         }
 
         if(!updateFKSolver())
@@ -1712,9 +1727,29 @@ bool WalkingModule::prepareRobot(bool onTheFly)
         return false;
     }
 
+    iDynTree::Position measuredCoM;
+    iDynTree::Vector3 measuredCoMVelocity;
+    iDynTree::Transform leftToRightTransform;
+
+    // get the current state of the robot
+    // this is necessary because the trajectories for the joints, CoM height and neck orientation
+    // depend on the current state of the robot
+    if(!getFeedbacks(10))
+    {
+        yError() << "[onTheFlyStartWalking] Unable to get the feedback.";
+        return false;
+    }
+    
     // set up the IMU
     if(m_useHeadIMU || m_useFeetIMU)
     {
+      checkWalkingStatus();
+      if(m_walkingStatus == WalkingStatus::Unknown)
+      {
+        yError() << "[IMU] Unknown walking status!";
+        return false;
+      }
+      
       parseIMUData();
       if(m_useHeadIMU)
       {
@@ -1734,19 +1769,6 @@ bool WalkingModule::prepareRobot(bool onTheFly)
         updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
       else
         updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
-    }
-
-    iDynTree::Position measuredCoM;
-    iDynTree::Vector3 measuredCoMVelocity;
-    iDynTree::Transform leftToRightTransform;
-
-    // get the current state of the robot
-    // this is necessary because the trajectories for the joints, CoM height and neck orientation
-    // depend on the current state of the robot
-    if(!getFeedbacks(10))
-    {
-        yError() << "[onTheFlyStartWalking] Unable to get the feedback.";
-        return false;
     }
 
     if(onTheFly)
@@ -2423,14 +2445,34 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   if(m_useFeetIMU)
     computeFeetOrientation(imudataL,imudataR);
   
-  iDynTree::Rotation headOrt = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
-  iDynTree::Rotation rFootOrt = m_FKSolver->getLeftFootToWorldTransform().getRotation();
-  iDynTree::Rotation lFootOrt = m_FKSolver->getRightFootToWorldTransform().getRotation();
+  iDynTree::Rotation headOrt;
+  iDynTree::Vector3 diffHeadRot;
+  iDynTree::Rotation rFootOrt;
+  iDynTree::Rotation lFootOrt;
+  iDynTree::Vector3 diffRFootRot;
+  iDynTree::Vector3 diffLFootRot;
+  if(m_useHeadIMU)
+  {
+    headOrt = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
+    diffHeadRot = (headOrt.inverse()*m_rotHeadIMU).asRPY();
+//     std::cout << " Head angles: " << iDynTree::rad2deg(headOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(headOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(headOrt.asRPY()(2)) << std::endl;
+//     std::cout << " Head angles IMU: " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(2)) << std::endl;
+  }
   
-  // check the threshold
-  iDynTree::Vector3 diffHeadRot = (headOrt.inverse()*m_rotHeadIMU).asRPY();
-  iDynTree::Vector3 diffRFootRot = (rFootOrt.inverse()*m_rotRFootIMU).asRPY();
-  iDynTree::Vector3 diffLFootRot = (lFootOrt.inverse()*m_rotLFootIMU).asRPY();
+  if(m_useFeetIMU)
+  {
+    rFootOrt = m_FKSolver->getLeftFootToWorldTransform().getRotation();
+    lFootOrt = m_FKSolver->getRightFootToWorldTransform().getRotation();
+    
+    // check the threshold
+    diffRFootRot = (rFootOrt.inverse()*m_rotRFootIMU).asRPY();
+    diffLFootRot = (lFootOrt.inverse()*m_rotLFootIMU).asRPY();
+    
+//     std::cout << " Lfoot angles: " << iDynTree::rad2deg(lFootOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(lFootOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(lFootOrt.asRPY()(2)) << std::endl;
+//     std::cout << " Lfoot angles IMU: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(2)) << std::endl;
+//     std::cout << " Rfoot angles: " << iDynTree::rad2deg(rFootOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(rFootOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(rFootOrt.asRPY()(2)) << std::endl;
+//     std::cout << " Rfoot angles IMU: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(2)) << std::endl;
+  }
   
   if(m_useHeadIMU)
   {
@@ -2460,21 +2502,27 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     if(m_useFeetIMU)
     {
       // if the two feet are on the same plane
-      if((diffLFootRot(0) - diffRFootRot(0)) < m_IMUPlaneThreshold)
+      if(m_walkingStatus == WalkingStatus::RSS || m_walkingStatus == WalkingStatus::DS)
       {
-        newRoll = m_rotRFootIMU.asRPY()(0);
+        if((diffLFootRot(0) - diffRFootRot(0)) < m_IMUPlaneThreshold)
+        {
+          newRoll = m_rotRFootIMU.asRPY()(0);
+        }
+        else
+        {
+          newRoll = (m_rotRFootIMU.asRPY()(0) + m_rotLFootIMU.asRPY()(0))/2;
+        }
       }
-      else
+      if(m_walkingStatus == WalkingStatus::LSS || m_walkingStatus == WalkingStatus::DS)
       {
-        newRoll = (m_rotRFootIMU.asRPY()(0) + m_rotLFootIMU.asRPY()(0))/2;
-      }
-      if((diffLFootRot(1) - diffRFootRot(1)) < m_IMUPlaneThreshold)
-      {
-        newPitch = m_rotRFootIMU.asRPY()(1);
-      }
-      else
-      {
-        newPitch = (m_rotRFootIMU.asRPY()(1) + m_rotLFootIMU.asRPY()(1))/2;
+        if((diffLFootRot(1) - diffRFootRot(1)) < m_IMUPlaneThreshold)
+        {
+          newPitch = m_rotRFootIMU.asRPY()(1);
+        }
+        else
+        {
+          newPitch = (m_rotRFootIMU.asRPY()(1) + m_rotLFootIMU.asRPY()(1))/2;
+        }
       }
     }
     
@@ -2485,6 +2533,8 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     }
     
     inertiaRotMat = iDynTree::Rotation::RPY(newRoll,newPitch,m_inertial_R_worldFrame.asRPY()(2));
+    
+    std::cout << "!!!!New angles: " << iDynTree::rad2deg(newRoll) << ", " << iDynTree::rad2deg(newPitch) << ", " << iDynTree::rad2deg(m_inertial_R_worldFrame.asRPY()(2)) << std::endl;
   } else
     inertiaRotMat = m_inertial_R_worldFrame; // if does not adapt, then use previous rotation
   
@@ -2510,7 +2560,7 @@ bool WalkingModule::parseIMUData()
     for(int i = 0; i < m_HeadIMUData.size(); i++)
       m_HeadIMUData[i] = iDynTree::deg2rad(imuHeadInput->operator[](i));
     
-    yInfo() << "IMU head: " << m_HeadIMUData.toString() ;
+//     yInfo() << "IMU head: " << m_HeadIMUData.toString() ;
   }
   
   if(m_useFeetIMU)
@@ -2592,6 +2642,53 @@ bool WalkingModule::parseIMUData()
     {
       m_LFootIMUDataFilt = m_LFootIMUFilter->filt(m_LFootIMUData);
       m_RFootIMUDataFilt = m_RFootIMUFilter->filt(m_RFootIMUData);
+    }
+  }
+  
+  return true;
+}
+
+bool WalkingModule::checkWalkingStatus()
+{
+  // check walking status according to wrench measurements
+  if(m_useWrenchFilter)
+  {
+    if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold)
+        m_walkingStatus = WalkingStatus::Unknown;
+    else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
+    {
+      m_walkingStatus = WalkingStatus::DS;
+      yInfo() << "!! Change status to DS";
+    }
+    else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold && (m_walkingStatus == WalkingStatus::LSS))
+    {
+      m_walkingStatus = WalkingStatus::LSS;
+      yInfo() << "!! Change status to LSS";
+    }
+    else if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && (m_walkingStatus == WalkingStatus::RSS))
+    {
+      m_walkingStatus = WalkingStatus::RSS;
+      yInfo() << "!! Change status to RSS";
+    }
+  }
+  else
+  {
+    if(m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold)
+      m_walkingStatus = WalkingStatus::Unknown;
+    else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
+    {
+      m_walkingStatus = WalkingStatus::DS;
+      yInfo() << "!! Change status to DS";
+    }
+    else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
+    {
+      m_walkingStatus = WalkingStatus::LSS;
+      yInfo() << "!! Change status to LSS";
+    }
+    else if (m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
+    {
+      m_walkingStatus = WalkingStatus::RSS;
+      yInfo() << "!! Change status to RSS";
     }
   }
   

@@ -48,7 +48,7 @@
 #include "thrifts/WalkingCommands.h"
 
 enum class WalkingFSM {Idle, Configured, Prepared, Walking, OnTheFly, Stance};
-enum class WalkingStatus {SS, DS};
+enum class WalkingStatus {LSS, RSS, DS, Unknown};
 
 /**
  * RFModule of the 2D-DCM dynamics model.
@@ -181,6 +181,11 @@ class WalkingModule:
     std::string m_imuHeadFrame;
     std::string m_imuRFootFrame;
     std::string m_imuLFootFrame;
+    WalkingStatus m_walkingStatus;
+    
+    // FT data
+    bool m_useFTDetection;
+    double m_FTThreshold;
     
     bool m_useIMUFiltering;
     std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_HeadIMUFilter;
@@ -406,6 +411,7 @@ class WalkingModule:
     bool computeHeadOrientation(yarp::sig::Vector imudata);
     bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool parseIMUData();
+    bool checkWalkingStatus();
 
 public:
 
