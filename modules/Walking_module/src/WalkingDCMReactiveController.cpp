@@ -41,11 +41,25 @@ bool WalkingDCMReactiveController::initialize(const yarp::os::Searchable& config
         return false;
     }
     double gravityAcceleration = config.check("gravity_acceleration", yarp::os::Value(9.81)).asDouble();
-    m_omega = sqrt(gravityAcceleration / comHeight);
+    m_gravity.zero();
+    m_gravity(2) = gravityAcceleration;
+    m_comHeight = comHeight;
+    
+    computeOmega();
 
     m_isInitialized = true;
 
     return true;
+}
+
+void WalkingDCMReactiveController::setGravity(iDynTree::Vector3 g)
+{
+  m_gravity = g;
+}
+
+void WalkingDCMReactiveController::computeOmega()
+{
+  m_omega = sqrt(m_gravity(2) / m_comHeight);
 }
 
 void WalkingDCMReactiveController::setFeedback(const iDynTree::Vector2& dcmFeedback)

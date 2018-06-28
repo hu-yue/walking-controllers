@@ -24,6 +24,8 @@ class WalkingDCMReactiveController
 {
     double m_kDCM; /**< Controller gain. */
     double m_omega; /**< LIPM time constant. */
+    iDynTree::Vector3 m_gravity;
+    double m_comHeight;
 
     bool m_isInitialized{false}; /**< True if the control was initialized. */
     bool m_controlEvaluated{false}; /**< True if the control output was correctly evaluated. */
@@ -35,6 +37,9 @@ class WalkingDCMReactiveController
     iDynTree::Vector2 m_controllerOutput; /**< Controller output. */
 
 public:
+  
+    void setGravity(iDynTree::Vector3 g);
+    void computeOmega();
 
     /**
      * Initialize the method

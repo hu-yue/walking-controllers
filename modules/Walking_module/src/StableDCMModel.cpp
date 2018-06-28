@@ -35,8 +35,11 @@ bool StableDCMModel::initialize(const yarp::os::Searchable& config)
         return false;
     }
     double gravityAcceleration = config.check("gravity_acceleration", yarp::os::Value(9.81)).asDouble();
+    m_gravity.zero();
+    m_gravity(2) = gravityAcceleration;
+    m_comHeight = comHeight;
 
-    m_omega = sqrt(gravityAcceleration / comHeight);
+    computeOmega();
 
     // set the sampling time
     double samplingTime;
@@ -53,6 +56,22 @@ bool StableDCMModel::initialize(const yarp::os::Searchable& config)
     m_comIntegrator = std::make_unique<iCub::ctrl::Integrator>(samplingTime, buffer);
 
     return true;
+}
+
+void StableDCMModel::setGravity(iDynTree::Vector3 g)
+{
+  m_gravity = g;
+}
+
+iDynTree::Vector3 StableDCMModel::getGravity()
+{
+  return m_gravity;
+}
+
+
+void StableDCMModel::computeOmega()
+{
+  m_omega = sqrt(m_gravity(2) / m_comHeight);
 }
 
 void StableDCMModel::setInput(const iDynTree::Vector2& input)

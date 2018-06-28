@@ -939,6 +939,7 @@ bool WalkingModule::updateModule()
             else
               updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
           }
+          updateGravityInWorld();
         }
 
         if(!updateFKSolver())
@@ -1769,6 +1770,8 @@ bool WalkingModule::prepareRobot(bool onTheFly)
         updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
       else
         updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+      
+      updateGravityInWorld();
     }
 
     if(onTheFly)
@@ -2695,3 +2698,26 @@ bool WalkingModule::checkWalkingStatus()
   return true;
 }
 
+bool WalkingModule::updateGravityInWorld()
+{
+  //iDynTree::Vector3 gravity = m_stableDCMModel->getGravity();
+  iDynTree::Position gravityMod;
+  gravityMod.zero();
+  iDynTree::Position gravity;
+  gravity.zero();
+  gravity(2) = 9.81;
+  gravityMod = m_inertial_R_worldFrame*gravity;
+  
+  m_stableDCMModel->setGravity(gravityMod);
+  m_stableDCMModel->computeOmega();
+  if(m_useMPC)
+  {
+    m_walkingController->setGravity(gravityMod);
+    m_walkingController->computeOmega();
+  } else
+  {
+    m_walkingDCMReactiveController->setGravity(gravityMod);
+    m_walkingDCMReactiveController->computeOmega();
+  }
+  
+}

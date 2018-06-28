@@ -16,6 +16,30 @@
 #include "WalkingController.hpp"
 #include "Utils.hpp"
 
+void WalkingController::setGravity(iDynTree::Vector3 g)
+{
+  m_gravity = g;
+}
+
+void WalkingController::computeOmega()
+{
+  m_omega = sqrt(m_gravity(2) / m_comHeight);
+}
+
+void WalkingController::updateEqualConstraintsMatrix()
+{
+  // evaluate dynamics matrix
+  iDynTree::Triplets stateDynamicsTriplets;
+  iDynTree::Triplets inputDynamicsTriplets;
+  stateDynamicsTriplets.addDiagonalMatrix(0, 0, exp(m_omega * m_dT), m_stateSize);
+  inputDynamicsTriplets.addDiagonalMatrix(0, 0, 1 - exp(m_omega * m_dT), m_inputSize);
+  
+  // evaluate equal constraints matrix
+  m_equalConstraintsMatrixTriplets = evaluateEqualConstraintsMatrix(stateDynamicsTriplets,
+                                                                    inputDynamicsTriplets);
+}
+
+
 iDynSparseMatrix WalkingController::evaluateThetaMatrix()
 {
     // set the submatrix dimension
@@ -175,12 +199,12 @@ bool WalkingController::initializeMatrices(const yarp::os::Searchable& config)
     }
 
     // get sampling time
-    double dT = config.check("sampling_time", yarp::os::Value(0.016)).asDouble();
+    m_dT = config.check("sampling_time", yarp::os::Value(0.016)).asDouble();
 
     // evaluate the controller horizon
     double controllerHorizonSeconds = config.check("controllerHorizon",
                                                    yarp::os::Value(2.0)).asDouble();
-    m_controllerHorizon = round(controllerHorizonSeconds / dT);
+    m_controllerHorizon = round(controllerHorizonSeconds / m_dT);
 
     // get the state weight matrix
     tempValue = config.find("stateWeightTriplets");
@@ -224,17 +248,13 @@ bool WalkingController::initializeMatrices(const yarp::os::Searchable& config)
         return false;
     }
     double gravityAcceleration = config.check("gravity_acceleration", yarp::os::Value(9.81)).asDouble();
-    double omega = sqrt(gravityAcceleration / comHeight);
-
-    // evaluate dynamics matrix
-    iDynTree::Triplets stateDynamicsTriplets;
-    iDynTree::Triplets inputDynamicsTriplets;
-    stateDynamicsTriplets.addDiagonalMatrix(0, 0, exp(omega * dT), m_stateSize);
-    inputDynamicsTriplets.addDiagonalMatrix(0, 0, 1 - exp(omega * dT), m_inputSize);
-
-    // evaluate equal constraints matrix
-    m_equalConstraintsMatrixTriplets = evaluateEqualConstraintsMatrix(stateDynamicsTriplets,
-                                                                      inputDynamicsTriplets);
+    m_gravity.zero();
+    m_gravity(2) = gravityAcceleration;
+    m_comHeight = comHeight;
+    
+    computeOmega();
+    updateEqualConstraintsMatrix();
+    
     return true;
 }
 

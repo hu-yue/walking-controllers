@@ -36,9 +36,16 @@ class StableDCMModel
     iDynTree::Vector2 m_comVelocity; /**< Velocity of the CoM. */
 
     bool m_isModelPropagated{false}; /**< True if the model is propagated. */
+    
+    iDynTree::Vector3 m_gravity; // gravity vector
+    double m_comHeight;
 
 public:
-
+     
+    void setGravity(iDynTree::Vector3 g);
+    void computeOmega();
+    iDynTree::Vector3 getGravity();
+  
     /**
      * Initialize the 3D-LIPM.
      * @param config config of the 3D-LIPM;

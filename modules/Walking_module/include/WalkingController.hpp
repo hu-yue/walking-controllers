@@ -78,6 +78,11 @@ class WalkingController
     std::shared_ptr<MPCSolver> m_currentController;
 
     iDynTree::Vector2 m_output; /**< Vector containing the output of the controller. */
+    
+    double m_omega;
+    iDynTree::Vector3 m_gravity;
+    double m_comHeight;
+    double m_dT;
 
     /**
      * Initialize the quantities useful in the inequality constraints evaluation.
@@ -185,6 +190,10 @@ class WalkingController
     bool buildConvexHull(const iDynTree::Transform& footTransformfoot);
 
 public:
+  
+    void setGravity(iDynTree::Vector3 g);
+    void computeOmega();
+    void updateEqualConstraintsMatrix();
 
     /**
      * Initialize the method

@@ -412,6 +412,7 @@ class WalkingModule:
     bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool parseIMUData();
     bool checkWalkingStatus();
+    bool updateGravityInWorld();
 
 public:
 
