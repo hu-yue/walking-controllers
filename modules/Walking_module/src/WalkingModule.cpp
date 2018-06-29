@@ -1740,41 +1740,8 @@ bool WalkingModule::prepareRobot(bool onTheFly)
         yError() << "[onTheFlyStartWalking] Unable to get the feedback.";
         return false;
     }
-    
-    // set up the IMU
-    if(m_useHeadIMU || m_useFeetIMU)
-    {
-      checkWalkingStatus();
-      if(m_walkingStatus == WalkingStatus::Unknown)
-      {
-        yError() << "[IMU] Unknown walking status!";
-        return false;
-      }
-      
-      parseIMUData();
-      if(m_useHeadIMU)
-      {
-        if(m_useIMUFiltering)
-          computeEarthToWorldHead(m_HeadIMUDataFilt);
-        else
-          computeEarthToWorldHead(m_HeadIMUData);
-      }
-      if(m_useFeetIMU)
-      {
-        if(m_useIMUFiltering)
-          computeEarthToWorld(m_LFootIMUDataFilt,m_RFootIMUDataFilt);
-        else
-          computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
-      }
-      if(m_useIMUFiltering)
-        updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
-      else
-        updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
-      
-      updateGravityInWorld();
-    }
 
-    if(onTheFly)
+    if(onTheFly || m_useHeadIMU || m_useFeetIMU)
     {
         if(!m_FKSolver->setBaseOnTheFly())
 	{
@@ -1797,6 +1764,39 @@ bool WalkingModule::prepareRobot(bool onTheFly)
 	   yError() << "[onTheFlyStartWalking] Failed to evaluate the first trajectories.";
 	   return false;
 	}
+	
+	// set up the IMU
+	if(m_useHeadIMU || m_useFeetIMU)
+        {
+          checkWalkingStatus();
+          if(m_walkingStatus == WalkingStatus::Unknown)
+          {
+            yError() << "[IMU] Unknown walking status!";
+            return false;
+          }
+          
+          parseIMUData();
+          if(m_useHeadIMU)
+          {
+            if(m_useIMUFiltering)
+              computeEarthToWorldHead(m_HeadIMUDataFilt);
+            else
+              computeEarthToWorldHead(m_HeadIMUData);
+          }
+          if(m_useFeetIMU)
+          {
+            if(m_useIMUFiltering)
+              computeEarthToWorld(m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+            else
+              computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
+          }
+          if(m_useIMUFiltering)
+            updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+          else
+            updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+          
+          updateGravityInWorld();
+        }
     }
     else
     {
@@ -2405,35 +2405,35 @@ bool WalkingModule::onTheFlyStartWalking(const double smoothingTime)
 bool WalkingModule::computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR)
 {
   iDynTree::Rotation lSoleToBase = m_FKSolver->getLeftFootToWorldTransform().getRotation();
-  iDynTree::Rotation m_rotLFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getLeftFootFrame(),m_imuLFootFrame).getRotation();
-  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataL(0)),iDynTree::deg2rad(imudataL(1)),iDynTree::deg2rad(imudataL(2)));
+  m_rotLFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getLeftFootFrame(),m_imuLFootFrame).getRotation();
+  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(imudataL(0),imudataL(1),imudataL(2));
   m_rotLEarthToWorld = lSoleToBase*m_rotLFTToSole*m_IMUToFT*lIMUtoEarth.inverse();
   
   iDynTree::Rotation rSoleToBase = m_FKSolver->getRightFootToWorldTransform().getRotation();
-  iDynTree::Rotation m_rotRFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getRightFootFrame(),m_imuRFootFrame).getRotation();
-  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataR(0)),iDynTree::deg2rad(imudataR(1)),iDynTree::deg2rad(imudataR(2)));
+  m_rotRFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getRightFootFrame(),m_imuRFootFrame).getRotation();
+  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(imudataR(0),imudataR(1),imudataR(2));
   m_rotREarthToWorld = rSoleToBase*m_rotRFTToSole*m_IMUToFT*rIMUtoEarth.inverse();
 }
 
 bool WalkingModule::computeEarthToWorldHead(yarp::sig::Vector imudata)
 {
   iDynTree::Rotation headToBase = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
-  iDynTree::Rotation IMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudata(0)),iDynTree::deg2rad(imudata(1)),iDynTree::deg2rad(imudata(2)));
+  iDynTree::Rotation IMUtoEarth = iDynTree::Rotation::RPY(imudata(0),imudata(1),imudata(2));
   m_rotHeadEarthToWorld = headToBase*IMUtoEarth.inverse();
 }
 
 bool WalkingModule::computeFeetOrientation(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR)
 {  
-  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataL(0)),iDynTree::deg2rad(imudataL(1)),iDynTree::deg2rad(imudataL(2)));
-  m_rotRFootIMU = m_rotLEarthToWorld*lIMUtoEarth*m_IMUToFT.inverse()*m_rotLFTToSole.inverse();
+  iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(imudataL(0),imudataL(1),imudataL(2));
+  m_rotLFootIMU = m_rotLEarthToWorld*lIMUtoEarth*m_IMUToFT.inverse()*m_rotLFTToSole.inverse();
   
-  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudataR(0)),iDynTree::deg2rad(imudataR(1)),iDynTree::deg2rad(imudataR(2)));
+  iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(imudataR(0),imudataR(1),imudataR(2));
   m_rotRFootIMU = m_rotREarthToWorld*rIMUtoEarth*m_IMUToFT.inverse()*m_rotRFTToSole.inverse();
 }
 
 bool WalkingModule::computeHeadOrientation(yarp::sig::Vector imudata)
 {  
-  iDynTree::Rotation IMUtoEarth = iDynTree::Rotation::RPY(iDynTree::deg2rad(imudata(0)),iDynTree::deg2rad(imudata(1)),iDynTree::deg2rad(imudata(2)));
+  iDynTree::Rotation IMUtoEarth = iDynTree::Rotation::RPY(imudata(0),imudata(1),imudata(2));
   m_rotHeadIMU = m_rotHeadEarthToWorld*IMUtoEarth;
 }
 
@@ -2479,21 +2479,21 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   
   if(m_useHeadIMU)
   {
-    if(diffHeadRot(0) > m_IMUThresholdRoll)
+    if(std::abs(diffHeadRot(0)) > m_IMUThresholdRoll)
       adaptOrt = true;
-    if(diffHeadRot(1) > m_IMUThresholdPitch)
+    if(std::abs(diffHeadRot(1)) > m_IMUThresholdPitch)
       adaptOrt = true;
   }
   
   if(m_useFeetIMU)
   {
-    if(diffRFootRot(0) > m_IMUThresholdRoll)
+    if(std::abs(diffRFootRot(0)) > m_IMUThresholdRoll)
       adaptOrt = true;
-    if(diffRFootRot(1) > m_IMUThresholdPitch)
+    if(std::abs(diffRFootRot(1)) > m_IMUThresholdPitch)
       adaptOrt = true;
-    if(diffLFootRot(0) > m_IMUThresholdRoll)
+    if(std::abs(diffLFootRot(0)) > m_IMUThresholdRoll)
       adaptOrt = true;
-    if(diffLFootRot(1) > m_IMUThresholdPitch)
+    if(std::abs(diffLFootRot(1)) > m_IMUThresholdPitch)
       adaptOrt = true;
   }
   
@@ -2507,7 +2507,7 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
       // if the two feet are on the same plane
       if(m_walkingStatus == WalkingStatus::RSS || m_walkingStatus == WalkingStatus::DS)
       {
-        if((diffLFootRot(0) - diffRFootRot(0)) < m_IMUPlaneThreshold)
+        if(std::abs(diffLFootRot(0) - diffRFootRot(0)) < m_IMUPlaneThreshold)
         {
           newRoll = m_rotRFootIMU.asRPY()(0);
         }
@@ -2518,7 +2518,7 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
       }
       if(m_walkingStatus == WalkingStatus::LSS || m_walkingStatus == WalkingStatus::DS)
       {
-        if((diffLFootRot(1) - diffRFootRot(1)) < m_IMUPlaneThreshold)
+        if(std::abs(diffLFootRot(1) - diffRFootRot(1)) < m_IMUPlaneThreshold)
         {
           newPitch = m_rotRFootIMU.asRPY()(1);
         }
@@ -2537,7 +2537,12 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     
     inertiaRotMat = iDynTree::Rotation::RPY(newRoll,newPitch,m_inertial_R_worldFrame.asRPY()(2));
     
-    std::cout << "!!!!New angles: " << iDynTree::rad2deg(newRoll) << ", " << iDynTree::rad2deg(newPitch) << ", " << iDynTree::rad2deg(m_inertial_R_worldFrame.asRPY()(2)) << std::endl;
+    std::cout << "!!!!New angles: " << iDynTree::rad2deg(newRoll) << ", " << iDynTree::rad2deg(newPitch) << ", " << 
+    iDynTree::rad2deg(m_inertial_R_worldFrame.asRPY()(2)) << std::endl;
+    std::cout << "!!!!Angles diff: " << diffHeadRot.toString() << ", " << diffLFootRot.toString() << ", " << 
+    diffRFootRot.toString() << std::endl;
+    yInfo() << m_inertial_R_worldFrame.toString();
+    yInfo() << inertiaRotMat.toString();
   } else
     inertiaRotMat = m_inertial_R_worldFrame; // if does not adapt, then use previous rotation
   
@@ -2707,6 +2712,8 @@ bool WalkingModule::updateGravityInWorld()
   gravity.zero();
   gravity(2) = 9.81;
   gravityMod = m_inertial_R_worldFrame*gravity;
+  
+  //std::cout << "Gravity: " << gravity.toString() << " --- " << m_stableDCMModel->getGravity().toString() << std::endl;
   
   m_stableDCMModel->setGravity(gravityMod);
   m_stableDCMModel->computeOmega();
