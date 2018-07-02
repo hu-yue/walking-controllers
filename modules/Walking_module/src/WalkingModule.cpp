@@ -939,7 +939,6 @@ bool WalkingModule::updateModule()
             else
               updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
           }
-          updateGravityInWorld();
         }
 
         if(!updateFKSolver())
@@ -1794,8 +1793,6 @@ bool WalkingModule::prepareRobot(bool onTheFly)
             updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
           else
             updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
-          
-          updateGravityInWorld();
         }
     }
     else
@@ -2703,28 +2700,14 @@ bool WalkingModule::checkWalkingStatus()
   return true;
 }
 
-bool WalkingModule::updateGravityInWorld()
+bool WalkingModule::updateOmega(double zmpX, double zmpY)
 {
-  //iDynTree::Vector3 gravity = m_stableDCMModel->getGravity();
-  iDynTree::Position gravityMod;
-  gravityMod.zero();
-  iDynTree::Position gravity;
-  gravity.zero();
-  gravity(2) = 9.81;
-  gravityMod = m_inertial_R_worldFrame*gravity;
-  
-  //std::cout << "Gravity: " << gravity.toString() << " --- " << m_stableDCMModel->getGravity().toString() << std::endl;
-  
-  m_stableDCMModel->setGravity(gravityMod);
-  m_stableDCMModel->computeOmega();
+  double newZ = m_planeKx*zmpX + m_planeKy*zmpY;
+  m_stableDCMModel->updateOmega(newZ);
   if(m_useMPC)
   {
-    m_walkingController->setGravity(gravityMod);
-    m_walkingController->computeOmega();
+    m_walkingController->updateOmega(newZ);
+    m_walkingController->evaluateDynamics();
   } else
-  {
-    m_walkingDCMReactiveController->setGravity(gravityMod);
-    m_walkingDCMReactiveController->computeOmega();
-  }
-  
+    m_walkingDCMReactiveController->updateOmega(newZ);
 }

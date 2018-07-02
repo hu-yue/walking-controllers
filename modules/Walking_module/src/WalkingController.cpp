@@ -16,18 +16,18 @@
 #include "WalkingController.hpp"
 #include "Utils.hpp"
 
-void WalkingController::setGravity(iDynTree::Vector3 g)
+void WalkingController::updateOmega(iDynTree::Vector3 gravity)
 {
-  m_gravity = g;
+  m_omega = sqrt(gravity(2) / m_comHeight);
 }
 
-void WalkingController::computeOmega()
+void WalkingController::updateOmega(double comHeight)
 {
-  m_omega = sqrt(m_gravity(2) / m_comHeight);
+  m_omega = sqrt(m_gravity(2) / comHeight + m_comHeight);
 }
 
-void WalkingController::updateEqualConstraintsMatrix()
-{
+void WalkingController::evaluateDynamics()
+{  
   // evaluate dynamics matrix
   iDynTree::Triplets stateDynamicsTriplets;
   iDynTree::Triplets inputDynamicsTriplets;
@@ -38,7 +38,6 @@ void WalkingController::updateEqualConstraintsMatrix()
   m_equalConstraintsMatrixTriplets = evaluateEqualConstraintsMatrix(stateDynamicsTriplets,
                                                                     inputDynamicsTriplets);
 }
-
 
 iDynSparseMatrix WalkingController::evaluateThetaMatrix()
 {
@@ -252,8 +251,8 @@ bool WalkingController::initializeMatrices(const yarp::os::Searchable& config)
     m_gravity(2) = gravityAcceleration;
     m_comHeight = comHeight;
     
-    computeOmega();
-    updateEqualConstraintsMatrix();
+    updateOmega(m_gravity);
+    evaluateDynamics();
     
     return true;
 }

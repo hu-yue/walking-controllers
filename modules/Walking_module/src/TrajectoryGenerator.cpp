@@ -422,8 +422,8 @@ bool TrajectoryGenerator::updateTrajectories(double initTime, const iDynTree::Ve
     unicyclePositionFromStanceFoot(0) = 0.0;
     unicyclePositionFromStanceFoot(1) = correctLeft ? -m_nominalWidth/2 : m_nominalWidth/2;
 
-    iDynTree::Vector2 desredPositionFromStanceFoot;
-    iDynTree::toEigen(desredPositionFromStanceFoot) = iDynTree::toEigen(unicyclePositionFromStanceFoot)
+    iDynTree::Vector2 desiredPositionFromStanceFoot;
+    iDynTree::toEigen(desiredPositionFromStanceFoot) = iDynTree::toEigen(unicyclePositionFromStanceFoot)
         + iDynTree::toEigen(m_referencePointDistance) + iDynTree::toEigen(desiredPosition);
 
     // prepare the rotation matrix w_R_{unicycle}
@@ -436,10 +436,10 @@ bool TrajectoryGenerator::updateTrajectories(double initTime, const iDynTree::Ve
         std::lock_guard<std::mutex> guard(m_mutex);
 
         // apply the homogeneous transformation w_H_{unicycle}
-        m_desiredPoint(0) = c_theta * desredPositionFromStanceFoot(0)
-            - s_theta * desredPositionFromStanceFoot(1) + measured.getPosition()(0);
-        m_desiredPoint(1) = s_theta * desredPositionFromStanceFoot(0)
-            + c_theta * desredPositionFromStanceFoot(1) + measured.getPosition()(1);
+        m_desiredPoint(0) = c_theta * desiredPositionFromStanceFoot(0)
+            - s_theta * desiredPositionFromStanceFoot(1) + measured.getPosition()(0);
+        m_desiredPoint(1) = s_theta * desiredPositionFromStanceFoot(0)
+            + c_theta * desiredPositionFromStanceFoot(1) + measured.getPosition()(1);
 
         m_initTime = initTime;
 

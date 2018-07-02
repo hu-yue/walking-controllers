@@ -196,6 +196,8 @@ class WalkingModule:
     double m_IMUThresholdRoll;
     double m_IMUPlaneThreshold;
     double m_IMUSmoothingTime;
+    double m_planeKx;
+    double m_planeKy;
     
     // IMU ports
     yarp::os::BufferedPort<yarp::os::Bottle> m_RFootIMUPort;
@@ -412,7 +414,7 @@ class WalkingModule:
     bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool parseIMUData();
     bool checkWalkingStatus();
-    bool updateGravityInWorld();
+    bool updateOmega(double zmpX, double zmpY);
 
 public:
 

@@ -80,8 +80,8 @@ class WalkingController
     iDynTree::Vector2 m_output; /**< Vector containing the output of the controller. */
     
     double m_omega;
-    iDynTree::Vector3 m_gravity;
     double m_comHeight;
+    iDynTree::Vector3 m_gravity;
     double m_dT;
 
     /**
@@ -191,9 +191,9 @@ class WalkingController
 
 public:
   
-    void setGravity(iDynTree::Vector3 g);
-    void computeOmega();
-    void updateEqualConstraintsMatrix();
+  void updateOmega(iDynTree::Vector3 gravity);
+  void updateOmega(double comHeight);
+    void evaluateDynamics();
 
     /**
      * Initialize the method

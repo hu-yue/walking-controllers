@@ -28,6 +28,8 @@
 class StableDCMModel
 {
     double m_omega; /**< Inverted time constant of the 3D-LIPM. */
+    double m_comHeight;
+    iDynTree::Vector3 m_gravity;
 
     std::unique_ptr<iCub::ctrl::Integrator> m_comIntegrator{nullptr}; /**< CoM integrator object. */
 
@@ -36,15 +38,11 @@ class StableDCMModel
     iDynTree::Vector2 m_comVelocity; /**< Velocity of the CoM. */
 
     bool m_isModelPropagated{false}; /**< True if the model is propagated. */
-    
-    iDynTree::Vector3 m_gravity; // gravity vector
-    double m_comHeight;
 
 public:
      
-    void setGravity(iDynTree::Vector3 g);
-    void computeOmega();
-    iDynTree::Vector3 getGravity();
+    void updateOmega(iDynTree::Vector3 gravity);
+    void updateOmega(double comHeight);
   
     /**
      * Initialize the 3D-LIPM.
