@@ -178,10 +178,18 @@ class WalkingModule:
     bool m_useHeadIMU;
     bool m_useFeetIMU;
     bool m_useIMUDS;
+    bool m_updateOnceDS;
+    bool m_ignoreYaw;
+    bool m_ortChanged;
     std::string m_imuHeadFrame;
     std::string m_imuRFootFrame;
     std::string m_imuLFootFrame;
     WalkingStatus m_walkingStatus;
+    WalkingStatus m_prevWalkingStatus;
+    bool m_DSSwitchedOut;
+    iDynTree::Rotation m_inertial_R_worldFrame_new;
+    std::vector<iDynTree::Rotation> m_inertial_R_worldFrame_vec;
+    double m_ortChangeIndex;
     
     // FT data
     bool m_useFTDetection;
@@ -198,6 +206,8 @@ class WalkingModule:
     double m_IMUSmoothingTime;
     double m_planeKx;
     double m_planeKy;
+    double m_desiredZMPX;
+    double m_desiredZMPY;
     
     // IMU ports
     yarp::os::BufferedPort<yarp::os::Bottle> m_RFootIMUPort;
@@ -286,7 +296,7 @@ class WalkingModule:
     bool getFeedbacks(unsigned int maxAttempts = 1);
 
     /**
-     * Get the higher position error among all joints.
+     * Get the higher position error among all joints.continue;
      * @param desiredJointPositionsRad desired joint position in radiants;
      * @param worstError is a pair containing the indices of the joint with the
      * worst error and its value.
@@ -414,7 +424,9 @@ class WalkingModule:
     bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool parseIMUData();
     bool checkWalkingStatus();
-    bool updateOmega(double zmpX, double zmpY);
+    void computeInclinationPlane();
+    void updateOmega(double zmpX, double zmpY);
+    void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
 
 public:
 

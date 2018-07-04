@@ -109,6 +109,8 @@ bool TrajectoryGenerator::configurePlanner(const yarp::os::Searchable& config)
     bool useMinimumJerkFootTrajectory = config.check("useMinimumJerkFootTrajectory",
                                                      yarp::os::Value(false)).asBool();
     double pitchDelta = config.check("pitchDelta", yarp::os::Value(0.0)).asDouble();
+    
+    bool useOrtAdaptation = config.check("useOrtAdaptation", yarp::os::Value(false)).asBool();
 
     // try to configure the planner
     bool ok = true;
@@ -140,8 +142,8 @@ bool TrajectoryGenerator::configurePlanner(const yarp::os::Searchable& config)
     m_trajectoryGenerator.addTerminalStep(false);
     m_trajectoryGenerator.startWithLeft(m_swingLeft);
     m_trajectoryGenerator.resetTimingsIfStill(startWithSameFoot);
-
     
+    m_trajectoryGenerator.useOrtAdaptation(useOrtAdaptation);
     
     m_trajectoryGenerator.useMinimumJerkFootTrajectory(useMinimumJerkFootTrajectory);
 

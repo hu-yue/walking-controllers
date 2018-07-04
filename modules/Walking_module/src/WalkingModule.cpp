@@ -386,6 +386,7 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
     m_useHeadIMU = config.check("useHeadIMU", yarp::os::Value(false)).asBool();
     m_useFeetIMU = config.check("useFeetIMU", yarp::os::Value(false)).asBool();
     m_useIMUDS = config.check("useIMUDS", yarp::os::Value(false)).asBool();
+    m_ignoreYaw = config.check("ignoreYaw", yarp::os::Value(false)).asBool();
     
     if(m_useIMUDS)
       yInfo() << "Using IMU only in double support.";
@@ -458,10 +459,18 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_IMUThresholdRoll = iDynTree::deg2rad(config.check("tiltThresholdRoll", yarp::os::Value(2)).asDouble());
       m_IMUPlaneThreshold = iDynTree::deg2rad(config.check("planeThreshold", yarp::os::Value(1)).asDouble());
       m_IMUSmoothingTime = config.check("smoothingTime", yarp::os::Value(0.5)).asDouble();
-      m_useIMUFiltering=config.check("useIMUFiltering", yarp::os::Value(true)).asBool();
+      m_useIMUFiltering = config.check("useIMUFiltering", yarp::os::Value(true)).asBool();
+      m_updateOnceDS = config.check("updateOnceDS", yarp::os::Value(true)).asBool();
+      
+      if(!m_useIMUDS && m_updateOnceDS)
+      {
+        yInfo() << "[WARNING] Impossible to use update once if not using IMU only in DS. Deactivating.";
+        m_updateOnceDS = false;
+      }
+      
       if(m_useIMUFiltering)
       {
-        m_IMUFilterFreq = config.check("filterFreq", yarp::os::Value(25)).asDouble();
+        m_IMUFilterFreq = config.check("filterFreq", yarp::os::Value(100)).asDouble();
         if(m_useHeadIMU)
           m_HeadIMUFilter = std::make_unique<iCub::ctrl::FirstOrderLowPassFilter>(m_IMUFilterFreq, m_dT);
         if(m_useFeetIMU)
@@ -495,6 +504,15 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_RFootIMUDataFilt.zero();
       m_LFootIMUDataFilt.zero();
       m_walkingStatus = WalkingStatus::Unknown;
+      m_prevWalkingStatus = m_walkingStatus;
+      m_planeKx = 0;
+      m_planeKy = 0;
+      m_desiredZMPX = 0;
+      m_desiredZMPY = 0;
+      m_ortChanged = false;
+      m_DSSwitchedOut = false;
+      m_inertial_R_worldFrame_new = m_inertial_R_worldFrame;
+      m_inertial_R_worldFrame_vec.resize(floor(m_IMUSmoothingTime/m_dT));
     }
     
     return true;
@@ -533,22 +551,6 @@ bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
         yError() << "[configure] Unable to configure the robot.";
         return false;
     }
-    
-    yarp::os::Bottle& IMUOptions = rf.findGroup("IMU");
-    if(IMUOptions.size() > 0)
-    {
-      if(!configureIMU(IMUOptions))
-      {
-        yError() << "[configure] Unable to configure the IMU.";
-        return false;
-      }
-    } else
-    {
-      m_useFeetIMU = false;
-      m_useHeadIMU = false;
-      m_useIMUDS = false;
-      m_useIMUFiltering = false;
-    }
 
     yarp::os::Bottle& generalOptions = rf.findGroup("GENERAL");
     m_dT = generalOptions.check("sampling_time", yarp::os::Value(0.016)).asDouble();
@@ -577,6 +579,22 @@ bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
     {
         yError() << "[configure] Unable to initialize the planner.";
         return false;
+    }
+    
+    yarp::os::Bottle& IMUOptions = rf.findGroup("IMU");
+    if(IMUOptions.size() > 0)
+    {
+      if(!configureIMU(IMUOptions))
+      {
+        yError() << "[configure] Unable to configure the IMU.";
+        return false;
+      }
+    } else
+    {
+      m_useFeetIMU = false;
+      m_useHeadIMU = false;
+      m_useIMUDS = false;
+      m_useIMUFiltering = false;
     }
 
     if(m_useMPC)
@@ -917,27 +935,24 @@ bool WalkingModule::updateModule()
             return false;
           }
           
-          if(((m_useIMUDS && m_walkingStatus == WalkingStatus::DS) || !m_useIMUDS))
+          if((m_useIMUDS && m_walkingStatus == WalkingStatus::DS) || !m_useIMUDS)
           {
             parseIMUData();
-            if(m_useHeadIMU)
-            {
-              if(m_useIMUFiltering)
-                computeEarthToWorldHead(m_HeadIMUDataFilt);
-              else
-                computeEarthToWorldHead(m_HeadIMUData);
-            }
-            if(m_useFeetIMU)
-            {
-              if(m_useIMUFiltering)
-                computeEarthToWorld(m_LFootIMUDataFilt,m_RFootIMUDataFilt);
-              else
-                computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
-            }
-            if(m_useIMUFiltering)
-              updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+            if(m_updateOnceDS && !m_DSSwitchedOut && m_ortChanged)
+              m_inertial_R_worldFrame = iDynTree::Rotation::Identity()*m_inertial_R_worldFrame;
             else
-              updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+            {
+              if(m_useIMUFiltering)
+                updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+              else
+                updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+            }
+          }
+          
+          if(m_ortChangeIndex < m_inertial_R_worldFrame_vec.size())
+          {
+            m_inertial_R_worldFrame = m_inertial_R_worldFrame_vec[m_ortChangeIndex];
+            m_ortChangeIndex++;
           }
         }
 
@@ -991,6 +1006,12 @@ bool WalkingModule::updateModule()
         iDynTree::Vector2 desiredZMP;
         if(m_useMPC)
         {
+            if((m_useFeetIMU || m_useHeadIMU))
+            {
+              computeInclinationPlane();
+              updateOmega(m_desiredZMPX,m_desiredZMPY);
+            }
+            
             // Model predictive controller
             m_profiler->setInitTime("MPC");
             if(!m_walkingController->setConvexHullConstraint(m_leftTrajectory, m_rightTrajectory,
@@ -1023,11 +1044,19 @@ bool WalkingModule::updateModule()
                 yError() << "[updateModule] Unable to get the MPC output.";
                 return false;
             }
-
+            
+            m_desiredZMPX = desiredZMP(0);
+            m_desiredZMPY = desiredZMP(1);
             m_profiler->setEndTime("MPC");
         }
         else
         {
+          if((m_useFeetIMU || m_useHeadIMU))
+            {
+              computeInclinationPlane();
+              updateOmega(m_desiredZMPX,m_desiredZMPY);
+            }
+            
             m_walkingDCMReactiveController->setFeedback(measuredDCM);
             m_walkingDCMReactiveController->setReferenceSignal(m_DCMPositionDesired.front(),
                                                                m_DCMVelocityDesired.front());
@@ -1043,6 +1072,9 @@ bool WalkingModule::updateModule()
                 yError() << "[updateModule] Unable to get the DCM control output.";
                 return false;
             }
+            
+            m_desiredZMPX = desiredZMP(0);
+            m_desiredZMPY = desiredZMP(1);
         }
 
         // inner COM-ZMP controller
@@ -1793,6 +1825,7 @@ bool WalkingModule::prepareRobot(bool onTheFly)
             updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
           else
             updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+          m_DSSwitchedOut = false;
         }
     }
     else
@@ -2445,6 +2478,9 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   if(m_useFeetIMU)
     computeFeetOrientation(imudataL,imudataR);
   
+  std::cout << "Right foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
+  std::cout << "Left foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
+  
   iDynTree::Rotation headOrt;
   iDynTree::Vector3 diffHeadRot;
   iDynTree::Rotation rFootOrt;
@@ -2455,8 +2491,6 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   {
     headOrt = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
     diffHeadRot = (headOrt.inverse()*m_rotHeadIMU).asRPY();
-//     std::cout << " Head angles: " << iDynTree::rad2deg(headOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(headOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(headOrt.asRPY()(2)) << std::endl;
-//     std::cout << " Head angles IMU: " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotHeadIMU.asRPY()(2)) << std::endl;
   }
   
   if(m_useFeetIMU)
@@ -2468,10 +2502,10 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     diffRFootRot = (rFootOrt.inverse()*m_rotRFootIMU).asRPY();
     diffLFootRot = (lFootOrt.inverse()*m_rotLFootIMU).asRPY();
     
-//     std::cout << " Lfoot angles: " << iDynTree::rad2deg(lFootOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(lFootOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(lFootOrt.asRPY()(2)) << std::endl;
-//     std::cout << " Lfoot angles IMU: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(2)) << std::endl;
-//     std::cout << " Rfoot angles: " << iDynTree::rad2deg(rFootOrt.asRPY()(0)) << ", " << iDynTree::rad2deg(rFootOrt.asRPY()(1)) << ", " << iDynTree::rad2deg(rFootOrt.asRPY()(2)) << std::endl;
-//     std::cout << " Rfoot angles IMU: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(2)) << std::endl;
+//     std::cout << "Right foot: " << iDynTree::rad2deg(diffRFootRot(0)) << iDynTree::rad2deg(diffRFootRot(1)) << std::endl;
+//     std::cout << "Left foot: " << iDynTree::rad2deg(diffLFootRot(0)) << iDynTree::rad2deg(diffLFootRot(1)) << std::endl;
+    std::cout << "Right foot: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << std::endl;
+    std::cout << "Left foot: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << std::endl;
   }
   
   if(m_useHeadIMU)
@@ -2501,28 +2535,40 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     
     if(m_useFeetIMU)
     {
-      // if the two feet are on the same plane
-      if(m_walkingStatus == WalkingStatus::RSS || m_walkingStatus == WalkingStatus::DS)
+      if(m_walkingStatus == WalkingStatus::DS)
       {
-        if(std::abs(diffLFootRot(0) - diffRFootRot(0)) < m_IMUPlaneThreshold)
-        {
-          newRoll = m_rotRFootIMU.asRPY()(0);
-        }
-        else
+        // if feet not on the same plane, otherwise use the new touchdown foot
+        if(std::abs(diffLFootRot(0) - diffRFootRot(0)) > m_IMUPlaneThreshold)
         {
           newRoll = (m_rotRFootIMU.asRPY()(0) + m_rotLFootIMU.asRPY()(0))/2;
         }
-      }
-      if(m_walkingStatus == WalkingStatus::LSS || m_walkingStatus == WalkingStatus::DS)
-      {
-        if(std::abs(diffLFootRot(1) - diffRFootRot(1)) < m_IMUPlaneThreshold)
-        {
-          newPitch = m_rotRFootIMU.asRPY()(1);
-        }
         else
+        {
+          if(m_prevWalkingStatus == WalkingStatus::RSS)
+            newRoll = m_rotLFootIMU.asRPY()(0);
+          else
+            newRoll = m_rotRFootIMU.asRPY()(0);
+        }
+        if(std::abs(diffLFootRot(1) - diffRFootRot(1)) > m_IMUPlaneThreshold)
         {
           newPitch = (m_rotRFootIMU.asRPY()(1) + m_rotLFootIMU.asRPY()(1))/2;
         }
+        else
+        {
+          if(m_prevWalkingStatus == WalkingStatus::RSS)
+            newPitch = m_rotLFootIMU.asRPY()(1);
+          else
+            newPitch = m_rotRFootIMU.asRPY()(1);
+        }
+      }
+      
+      if(m_walkingStatus == WalkingStatus::RSS)
+      {
+        newRoll = m_rotRFootIMU.asRPY()(0);
+      }
+      if(m_walkingStatus == WalkingStatus::LSS)
+      {
+        newPitch = m_rotRFootIMU.asRPY()(1);
       }
     }
     
@@ -2542,8 +2588,16 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
     yInfo() << inertiaRotMat.toString();
   } else
     inertiaRotMat = m_inertial_R_worldFrame; // if does not adapt, then use previous rotation
+    
+  if(adaptOrt)
+    yInfo() << ">>>>>>>>>>>>>>>!!! Changing ort !!!";
+  m_inertial_R_worldFrame_new = inertiaRotMat;
+  m_ortChanged = adaptOrt;
   
-  m_inertial_R_worldFrame = inertiaRotMat;
+  if(m_ortChanged)
+  {
+    smoothOrtTransition(m_inertial_R_worldFrame.asRPY(),m_inertial_R_worldFrame_new.asRPY(),m_inertial_R_worldFrame_vec);
+  }
   
   return true;
 }
@@ -2565,7 +2619,8 @@ bool WalkingModule::parseIMUData()
     for(int i = 0; i < m_HeadIMUData.size(); i++)
       m_HeadIMUData[i] = iDynTree::deg2rad(imuHeadInput->operator[](i));
     
-//     yInfo() << "IMU head: " << m_HeadIMUData.toString() ;
+    if(m_ignoreYaw)
+      m_HeadIMUData[2] = 0;
   }
   
   if(m_useFeetIMU)
@@ -2596,8 +2651,11 @@ bool WalkingModule::parseIMUData()
         m_LFootIMUData[i] = iDynTree::deg2rad(imuLInput->operator[](i));
       }
       
-//       yInfo() << "IMU L foot: " << m_LFootIMUData.toString() ;
-//       yInfo() << "IMU R foot: " << m_RFootIMUData.toString() ;
+      if(m_ignoreYaw)
+      {
+        m_RFootIMUData[2] = 0;
+        m_LFootIMUData[2] = 0;
+      }
     } 
     else
     {
@@ -2621,10 +2679,16 @@ bool WalkingModule::parseIMUData()
       
       m_RFootIMUData[0] = iDynTree::deg2rad(-imuRInput->get(1).asDouble());
       m_RFootIMUData[1] = iDynTree::deg2rad(-imuRInput->get(2).asDouble());
-      m_RFootIMUData[2] = iDynTree::deg2rad(-imuRInput->get(0).asDouble());
+      if(m_ignoreYaw)
+        m_RFootIMUData[0] = 0;
+      else
+        m_RFootIMUData[2] = iDynTree::deg2rad(-imuRInput->get(0).asDouble());
       m_LFootIMUData[0] = iDynTree::deg2rad(-imuLInput->get(1).asDouble());
       m_LFootIMUData[1] = iDynTree::deg2rad(-imuLInput->get(2).asDouble());
-      m_LFootIMUData[2] = iDynTree::deg2rad(-imuLInput->get(0).asDouble());
+      if(m_ignoreYaw)
+        m_LFootIMUData[2] = 0;
+      else
+        m_LFootIMUData[2] = iDynTree::deg2rad(-imuLInput->get(0).asDouble());
     }
   }
   
@@ -2662,18 +2726,27 @@ bool WalkingModule::checkWalkingStatus()
         m_walkingStatus = WalkingStatus::Unknown;
     else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::DS;
+      m_ortChanged = false;
+      m_DSSwitchedOut = false;
       yInfo() << "!! Change status to DS";
     }
     else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold && (m_walkingStatus == WalkingStatus::LSS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::LSS;
       yInfo() << "!! Change status to LSS";
+      m_ortChanged = false;
+      m_DSSwitchedOut = true;
     }
     else if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && (m_walkingStatus == WalkingStatus::RSS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::RSS;
       yInfo() << "!! Change status to RSS";
+      m_ortChanged = false;
+      m_DSSwitchedOut = true;
     }
   }
   else
@@ -2682,25 +2755,41 @@ bool WalkingModule::checkWalkingStatus()
       m_walkingStatus = WalkingStatus::Unknown;
     else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::DS;
       yInfo() << "!! Change status to DS";
+      m_ortChanged = false;
+      m_DSSwitchedOut = false;
     }
     else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::LSS;
       yInfo() << "!! Change status to LSS";
+      m_ortChanged = false;
+      m_DSSwitchedOut = true;
     }
     else if (m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
     {
+      m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::RSS;
       yInfo() << "!! Change status to RSS";
+      m_ortChanged = false;
+      m_DSSwitchedOut = true;
     }
   }
   
   return true;
 }
 
-bool WalkingModule::updateOmega(double zmpX, double zmpY)
+void WalkingModule::computeInclinationPlane()
+{
+  iDynTree::Vector3 angles = m_inertial_R_worldFrame.asRPY();
+  m_planeKx = std::tan(angles(0));
+  m_planeKy = std::tan(angles(1));
+}
+
+void WalkingModule::updateOmega(double zmpX, double zmpY)
 {
   double newZ = m_planeKx*zmpX + m_planeKy*zmpY;
   m_stableDCMModel->updateOmega(newZ);
@@ -2708,6 +2797,37 @@ bool WalkingModule::updateOmega(double zmpX, double zmpY)
   {
     m_walkingController->updateOmega(newZ);
     m_walkingController->evaluateDynamics();
-  } else
+  } 
+  else
     m_walkingDCMReactiveController->updateOmega(newZ);
+}
+
+void WalkingModule::smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec)
+{
+  iCub::ctrl::minJerkTrajGen ortSmoother(3,m_dT,m_IMUSmoothingTime);
+  yarp::sig::Vector rpyYarp;
+  yarp::sig::Vector rpyDYarp;
+  yarp::sig::Vector res;
+  rpyYarp.resize(3);
+  rpyDYarp.resize(3);
+  res.resize(3);
+  rpyYarp.zero();
+  rpyDYarp.zero();
+  res.zero();
+  for(unsigned int i = 0; i < rpyI.size(); i++)
+  {
+    rpyYarp(i) = rpyI(i);
+    rpyDYarp(i) = rpyId(i);
+  }
+  ortSmoother.init(rpyYarp);
+  int N = rotVec.size();
+  for(unsigned int i = 0; i < N; i++)
+  {
+    ortSmoother.computeNextValues(rpyDYarp);
+    res = ortSmoother.getPos();
+    std::cout << "Ort " << i << ": " << res.toString() << std::endl;
+    rotVec[i] = iDynTree::Rotation::RPY(res(0),res(1),res(2)); 
+  }
+  
+  m_ortChangeIndex = 0;
 }

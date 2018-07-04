@@ -67,7 +67,7 @@ void StableDCMModel::updateOmega(iDynTree::Vector3 gravity)
 
 void StableDCMModel::updateOmega(double comHeight)
 {
-  m_omega = sqrt(m_gravity(2) / comHeight + m_comHeight);
+  m_omega = sqrt(m_gravity(2) / (comHeight + m_comHeight));
 }
 
 void StableDCMModel::setInput(const iDynTree::Vector2& input)
