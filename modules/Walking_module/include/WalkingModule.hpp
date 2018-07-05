@@ -181,6 +181,7 @@ class WalkingModule:
     bool m_updateOnceDS;
     bool m_ignoreYaw;
     bool m_ortChanged;
+    bool m_useBiasMethod;
     std::string m_imuHeadFrame;
     std::string m_imuRFootFrame;
     std::string m_imuLFootFrame;
@@ -426,6 +427,7 @@ class WalkingModule:
     bool checkWalkingStatus();
     void computeInclinationPlane();
     void updateOmega(double zmpX, double zmpY);
+    void updateOmega(iDynTree::Vector3& gravity);
     void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
 
 public:

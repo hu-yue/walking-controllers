@@ -83,6 +83,7 @@ class WalkingController
     double m_comHeight;
     iDynTree::Vector3 m_gravity;
     double m_dT;
+    iDynTree::Vector2 m_bias;
 
     /**
      * Initialize the quantities useful in the inequality constraints evaluation.
@@ -191,9 +192,10 @@ class WalkingController
 
 public:
   
-  void updateOmega(iDynTree::Vector3 gravity);
-  void updateOmega(double comHeight);
+    void updateOmega(iDynTree::Vector3 gravity);
+    void updateOmega(double comHeight);
     void evaluateDynamics();
+    void setBias(double accX, double accY);
 
     /**
      * Initialize the method

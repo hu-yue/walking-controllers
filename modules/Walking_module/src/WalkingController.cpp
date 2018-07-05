@@ -26,6 +26,12 @@ void WalkingController::updateOmega(double comHeight)
   m_omega = sqrt(m_gravity(2) / (comHeight + m_comHeight));
 }
 
+void WalkingController::setBias(double accX, double accY)
+{
+  m_bias(0) = accX/(m_omega*m_omega);
+  m_bias(1) = accY/(m_omega*m_omega);
+}
+
 void WalkingController::evaluateDynamics()
 {  
   // evaluate dynamics matrix
@@ -250,6 +256,7 @@ bool WalkingController::initializeMatrices(const yarp::os::Searchable& config)
     m_gravity.zero();
     m_gravity(2) = gravityAcceleration;
     m_comHeight = comHeight;
+    m_bias.zero();
     
     updateOmega(m_gravity);
     evaluateDynamics();
@@ -545,6 +552,7 @@ bool WalkingController::getControllerOutput(iDynTree::Vector2& controllerOutput)
     }
 
     m_isSolutionEvaluated = false;
-    controllerOutput = m_output;
+    controllerOutput(0) = m_output(0) - m_bias(0);
+    controllerOutput(1) = m_output(1) - m_bias(1);
     return true;
 }

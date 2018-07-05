@@ -461,6 +461,7 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_IMUSmoothingTime = config.check("smoothingTime", yarp::os::Value(0.5)).asDouble();
       m_useIMUFiltering = config.check("useIMUFiltering", yarp::os::Value(true)).asBool();
       m_updateOnceDS = config.check("updateOnceDS", yarp::os::Value(true)).asBool();
+      m_useBiasMethod = config.check("useBiasMethod", yarp::os::Value(false)).asBool();
       
       if(!m_useIMUDS && m_updateOnceDS)
       {
@@ -513,6 +514,7 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_DSSwitchedOut = false;
       m_inertial_R_worldFrame_new = m_inertial_R_worldFrame;
       m_inertial_R_worldFrame_vec.resize(floor(m_IMUSmoothingTime/m_dT));
+      m_ortChangeIndex = floor(m_IMUSmoothingTime/m_dT);
     }
     
     return true;
@@ -1009,7 +1011,18 @@ bool WalkingModule::updateModule()
             if((m_useFeetIMU || m_useHeadIMU))
             {
               computeInclinationPlane();
-              updateOmega(m_desiredZMPX,m_desiredZMPY);
+              if(m_useBiasMethod)
+              {
+                iDynTree::Position currentGravity;
+                currentGravity.zero();
+                currentGravity(2) = 9.81;
+                currentGravity = m_inertial_R_worldFrame*currentGravity;
+                m_walkingController->setBias(currentGravity(0),currentGravity(1));
+                updateOmega(currentGravity);
+              }
+              else
+                updateOmega(m_desiredZMPX,m_desiredZMPY);
+              
             }
             
             // Model predictive controller
@@ -2495,12 +2508,19 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   
   if(m_useFeetIMU)
   {
-    rFootOrt = m_FKSolver->getLeftFootToWorldTransform().getRotation();
-    lFootOrt = m_FKSolver->getRightFootToWorldTransform().getRotation();
+//     rFootOrt = m_FKSolver->getLeftFootToWorldTransform().getRotation();
+//     lFootOrt = m_FKSolver->getRightFootToWorldTransform().getRotation();
     
-    // check the threshold
-    diffRFootRot = (rFootOrt.inverse()*m_rotRFootIMU).asRPY();
-    diffLFootRot = (lFootOrt.inverse()*m_rotLFootIMU).asRPY();
+    // check the threshold wrt the other stance foot
+    if(m_prevWalkingStatus == WalkingStatus::RSS)
+    {
+      diffRFootRot = (m_rotRFootIMU.inverse()*m_rotRFootIMU).asRPY();
+      diffLFootRot = (m_rotRFootIMU.inverse()*m_rotLFootIMU).asRPY();
+    } else if(m_prevWalkingStatus == WalkingStatus::LSS)
+    {
+      diffRFootRot = (m_rotLFootIMU.inverse()*m_rotRFootIMU).asRPY();
+      diffLFootRot = (m_rotLFootIMU.inverse()*m_rotLFootIMU).asRPY();
+    }
     
 //     std::cout << "Right foot: " << iDynTree::rad2deg(diffRFootRot(0)) << iDynTree::rad2deg(diffRFootRot(1)) << std::endl;
 //     std::cout << "Left foot: " << iDynTree::rad2deg(diffLFootRot(0)) << iDynTree::rad2deg(diffLFootRot(1)) << std::endl;
@@ -2800,6 +2820,18 @@ void WalkingModule::updateOmega(double zmpX, double zmpY)
   } 
   else
     m_walkingDCMReactiveController->updateOmega(newZ);
+}
+
+void WalkingModule::updateOmega(iDynTree::Vector3& gravity)
+{
+  m_stableDCMModel->updateOmega(gravity);
+  if(m_useMPC)
+  {
+    m_walkingController->updateOmega(gravity);
+    m_walkingController->evaluateDynamics();
+  } 
+  else
+    m_walkingDCMReactiveController->updateOmega(gravity);
 }
 
 void WalkingModule::smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec)

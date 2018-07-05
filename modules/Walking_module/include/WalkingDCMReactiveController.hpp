@@ -26,6 +26,7 @@ class WalkingDCMReactiveController
     double m_omega; /**< LIPM time constant. */
     double m_comHeight;
     iDynTree::Vector3 m_gravity;
+    iDynTree::Vector2 m_bias;
 
     bool m_isInitialized{false}; /**< True if the control was initialized. */
     bool m_controlEvaluated{false}; /**< True if the control output was correctly evaluated. */
@@ -40,6 +41,7 @@ public:
   
   void updateOmega(iDynTree::Vector3 gravity);
   void updateOmega(double comHeight);
+  void setBias(double accX, double accY);
 
     /**
      * Initialize the method

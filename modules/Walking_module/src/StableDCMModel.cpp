@@ -39,7 +39,7 @@ bool StableDCMModel::initialize(const yarp::os::Searchable& config)
     gravity.zero();
     gravity(2) = gravityAcceleration;
     m_comHeight = comHeight;
-
+    
     updateOmega(gravity);
 
     // set the sampling time

@@ -45,6 +45,7 @@ bool WalkingDCMReactiveController::initialize(const yarp::os::Searchable& config
     m_gravity.zero();
     m_gravity(2) = gravityAcceleration;
     m_comHeight = comHeight;
+    m_bias.zero();
     
     updateOmega(m_gravity);
 
@@ -61,6 +62,12 @@ void WalkingDCMReactiveController::updateOmega(iDynTree::Vector3 gravity)
 void WalkingDCMReactiveController::updateOmega(double comHeight)
 {
   m_omega = sqrt(m_gravity(2) / (comHeight + m_comHeight));
+}
+
+void WalkingDCMReactiveController::setBias(double accX, double accY)
+{
+    m_bias(0) = accX/(m_omega*m_omega);
+    m_bias(1) = accY/(m_omega*m_omega);
 }
 
 void WalkingDCMReactiveController::setFeedback(const iDynTree::Vector2& dcmFeedback)
@@ -104,6 +111,7 @@ bool WalkingDCMReactiveController::getControllerOutput(iDynTree::Vector2& contro
         return false;
     }
 
-    controllerOutput = m_controllerOutput;
+    controllerOutput(0) = m_controllerOutput(0) - m_bias(0);
+    controllerOutput(1) = m_controllerOutput(1) - m_bias(1);
     return true;
 }
