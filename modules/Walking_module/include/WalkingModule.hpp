@@ -195,6 +195,7 @@ class WalkingModule:
     // FT data
     bool m_useFTDetection;
     double m_FTThreshold;
+    bool m_useSkin;
     
     bool m_useIMUFiltering;
     std::unique_ptr<iCub::ctrl::FirstOrderLowPassFilter> m_HeadIMUFilter;
@@ -429,6 +430,7 @@ class WalkingModule:
     void updateOmega(double zmpX, double zmpY);
     void updateOmega(iDynTree::Vector3& gravity);
     void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
+    void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
 
 public:
 

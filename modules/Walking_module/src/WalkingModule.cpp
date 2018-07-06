@@ -483,6 +483,7 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       
       m_useFTDetection = config.check("useFTDetection", yarp::os::Value(false)).asBool();
       m_FTThreshold = config.check("FTThreshold", yarp::os::Value(20)).asDouble();
+      m_useSkin = config.check("useSkinDetection", yarp::os::Value(false)).asBool();
       
       // Initialize data
       m_rotRFTToSole = iDynTree::Rotation::Identity();
@@ -504,7 +505,10 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_LFootIMUDataFilt.resize(3);
       m_RFootIMUDataFilt.zero();
       m_LFootIMUDataFilt.zero();
-      m_walkingStatus = WalkingStatus::Unknown;
+      if(m_useFTDetection || m_useSkin)
+        m_walkingStatus = WalkingStatus::Unknown;
+      else
+        m_walkingStatus = WalkingStatus::DS;
       m_prevWalkingStatus = m_walkingStatus;
       m_planeKx = 0;
       m_planeKy = 0;
@@ -2739,49 +2743,78 @@ bool WalkingModule::parseIMUData()
 
 bool WalkingModule::checkWalkingStatus()
 {
-  // check walking status according to wrench measurements
-  if(m_useWrenchFilter)
+  // check walking status according to wrench measurements if useFTDetection
+  if(m_useFTDetection)
   {
-    if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold)
+    if(m_useWrenchFilter)
+    {
+      if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold)
+          m_walkingStatus = WalkingStatus::Unknown;
+      else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::DS;
+        m_ortChanged = false;
+        m_DSSwitchedOut = false;
+        yInfo() << "!! Change status to DS";
+      }
+      else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold && (m_walkingStatus == WalkingStatus::LSS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::LSS;
+        yInfo() << "!! Change status to LSS";
+        m_ortChanged = false;
+        m_DSSwitchedOut = true;
+      }
+      else if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && (m_walkingStatus == WalkingStatus::RSS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::RSS;
+        yInfo() << "!! Change status to RSS";
+        m_ortChanged = false;
+        m_DSSwitchedOut = true;
+      }
+    }
+    else
+    {
+      if(m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold)
         m_walkingStatus = WalkingStatus::Unknown;
-    else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
-    {
-      m_prevWalkingStatus = m_walkingStatus;
-      m_walkingStatus = WalkingStatus::DS;
-      m_ortChanged = false;
-      m_DSSwitchedOut = false;
-      yInfo() << "!! Change status to DS";
+      else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::DS;
+        yInfo() << "!! Change status to DS";
+        m_ortChanged = false;
+        m_DSSwitchedOut = false;
+      }
+      else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::LSS;
+        yInfo() << "!! Change status to LSS";
+        m_ortChanged = false;
+        m_DSSwitchedOut = true;
+      }
+      else if (m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
+      {
+        m_prevWalkingStatus = m_walkingStatus;
+        m_walkingStatus = WalkingStatus::RSS;
+        yInfo() << "!! Change status to RSS";
+        m_ortChanged = false;
+        m_DSSwitchedOut = true;
+      }
     }
-    else if(m_leftWrenchInputFiltered(2) > m_FTThreshold && m_rightWrenchInputFiltered(2) <= m_FTThreshold && (m_walkingStatus == WalkingStatus::LSS))
-    {
-      m_prevWalkingStatus = m_walkingStatus;
-      m_walkingStatus = WalkingStatus::LSS;
-      yInfo() << "!! Change status to LSS";
-      m_ortChanged = false;
-      m_DSSwitchedOut = true;
-    }
-    else if(m_leftWrenchInputFiltered(2) <= m_FTThreshold && m_rightWrenchInputFiltered(2) > m_FTThreshold && (m_walkingStatus == WalkingStatus::RSS))
-    {
-      m_prevWalkingStatus = m_walkingStatus;
-      m_walkingStatus = WalkingStatus::RSS;
-      yInfo() << "!! Change status to RSS";
-      m_ortChanged = false;
-      m_DSSwitchedOut = true;
-    }
-  }
-  else
+  } else // use the planner
   {
-    if(m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold)
-      m_walkingStatus = WalkingStatus::Unknown;
-    else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS))
+    if(m_leftInContact.front() && m_rightInContact.front() && m_walkingStatus!=WalkingStatus::DS)
     {
       m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::DS;
       yInfo() << "!! Change status to DS";
       m_ortChanged = false;
-      m_DSSwitchedOut = false;
+      m_DSSwitchedOut = false;      
     }
-    else if(m_leftWrenchInput(2) > m_FTThreshold && m_rightWrenchInput(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
+    else if(m_leftInContact.front() && !m_rightInContact.front() && m_walkingStatus!=WalkingStatus::LSS)
     {
       m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::LSS;
@@ -2789,7 +2822,7 @@ bool WalkingModule::checkWalkingStatus()
       m_ortChanged = false;
       m_DSSwitchedOut = true;
     }
-    else if (m_leftWrenchInput(2) <= m_FTThreshold && m_rightWrenchInput(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
+    else if(m_rightInContact.front() && !m_leftInContact.front() && m_walkingStatus!=WalkingStatus::RSS)
     {
       m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::RSS;
@@ -2800,6 +2833,34 @@ bool WalkingModule::checkWalkingStatus()
   }
   
   return true;
+}
+
+void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces)
+{
+  // Foot dimension
+  double d = 0.08;
+  double L = 0.15;
+  // compute the 4 forces of the foot
+  double f1,f2,f3,f4;
+  f1 = 0;
+  f2 = 0;
+  f3 = 0;
+  f4 = 0;
+  
+  iDynTree::Vector2 CoP;
+  CoP.zero();
+  CoP(0) = -wrench(4)/wrench(2);
+  CoP(1) = wrench(3)/wrench(2);
+  
+  f4 = 0.5*(std::max(0.0,-CoP(1)/d-CoP(0)/L)+std::min(0.5-CoP(1)/d,0.5-CoP(0)/L));
+  f1 = f4 + wrench(3)/d - wrench(4)/L;
+  f3 = -f4 + wrench(2)/2+wrench(4)/L;
+  f2 = wrench(2) - f1 - f3 - f4;
+  
+  forces(0) = f1;
+  forces(1) = f2;
+  forces(2) = f3;
+  forces(3) = f4;
 }
 
 void WalkingModule::computeInclinationPlane()
