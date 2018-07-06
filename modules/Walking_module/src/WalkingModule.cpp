@@ -513,16 +513,18 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       m_LFootIMUDataFilt.resize(3);
       m_RFootIMUDataFilt.zero();
       m_LFootIMUDataFilt.zero();
-      if(m_useFTDetection || m_useSkin)
-      {
-        m_walkingStatus = WalkingStatus::Unknown;
-        m_prevWalkingStatus = m_walkingStatus;
-      }
-      else
-      {
-        m_walkingStatus = WalkingStatus::DS;
-        m_prevWalkingStatus = WalkingStatus::LSS;
-      }
+//       if(m_useFTDetection || m_useSkin)
+//       {
+//         m_walkingStatus = WalkingStatus::Unknown;
+//         m_prevWalkingStatus = m_walkingStatus;
+//       }
+//       else
+//       {
+//         m_walkingStatus = WalkingStatus::DS;
+//         m_prevWalkingStatus = WalkingStatus::LSS;
+//       }
+      m_walkingStatus = WalkingStatus::DSStable;
+      m_prevWalkingStatus = WalkingStatus::LSS;
       m_planeKx = 0;
       m_planeKy = 0;
       m_desiredZMPX = 0;
@@ -534,6 +536,8 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       for(int i = 0; i < m_inertial_R_worldFrame_vec.size(); i++)
         m_inertial_R_worldFrame_vec[i] = m_inertial_R_worldFrame;
       m_ortChangeIndex = floor(m_IMUSmoothingTime/m_dT);
+      m_nominalWorldPitch = 0;
+      m_nominalWorldRoll = 0;
     }
     
     return true;
@@ -964,9 +968,9 @@ bool WalkingModule::updateModule()
             else
             {
               if(m_useIMUFiltering)
-                updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+                updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt,false);
               else
-                updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+                updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData,false);
             }
           }
           
@@ -1863,10 +1867,29 @@ bool WalkingModule::prepareRobot(bool onTheFly)
               computeEarthToWorld(m_LFootIMUData,m_RFootIMUData);
           }
           if(m_useIMUFiltering)
-            updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt);
+            updateInertiaRWorld(m_HeadIMUDataFilt,m_LFootIMUDataFilt,m_RFootIMUDataFilt,true);
           else
-            updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData);
+            updateInertiaRWorld(m_HeadIMUData,m_LFootIMUData,m_RFootIMUData,true);
           m_DSSwitchedOut = false;
+          
+          m_nominalWorldRoll = m_inertial_R_worldFrame.asRPY()(0);
+          m_nominalWorldPitch = m_inertial_R_worldFrame.asRPY()(1);
+          
+          computeInclinationPlane();
+          if(m_useBiasMethod)
+          {
+            iDynTree::Position currentGravity;
+            currentGravity.zero();
+            currentGravity(2) = 9.81;
+            currentGravity = m_inertial_R_worldFrame*currentGravity;
+            if(m_useMPC)
+              m_walkingController->setBias(currentGravity(0),currentGravity(1));
+            else
+              m_walkingDCMReactiveController->setBias(currentGravity(0),currentGravity(1));
+            updateOmega(currentGravity);
+          }
+          else
+            updateOmega(m_desiredZMPX,m_desiredZMPY);
         }
     }
     else
@@ -2475,12 +2498,31 @@ bool WalkingModule::onTheFlyStartWalking(const double smoothingTime)
 // This function is called only once at the beginning of the walking
 bool WalkingModule::computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR)
 {
-  iDynTree::Rotation lSoleToBase = m_FKSolver->getLeftFootToWorldTransform().getRotation();
+  // when world is inclined
+  iDynTree::Rotation worldOrt = iDynTree::Rotation::Identity();
+  double worldPitch = 0;
+  double worldRoll = 0;
+  if(imudataL(0) > m_IMUWorldThresholdRoll || imudataL(1) > m_IMUWorldThresholdPitch || imudataR(0) > m_IMUWorldThresholdRoll || imudataR(1) > m_IMUWorldThresholdPitch )
+  {
+    if(std::abs(imudataL(0) - imudataR(0)) > m_IMUThresholdRoll)
+      worldRoll = (imudataL(0) + imudataR(0))/2;
+    else
+      worldRoll = imudataL(0);
+    
+    if(std::abs(imudataL(1) - imudataR(1)) > m_IMUThresholdRoll)
+      worldPitch = (imudataL(1) + imudataR(1))/2;
+    else
+      worldPitch = imudataL(1);
+  }
+  
+  worldOrt = iDynTree::Rotation::RPY(worldRoll,worldPitch,0);
+  
+  iDynTree::Rotation lSoleToBase = worldOrt*m_FKSolver->getLeftFootToWorldTransform().getRotation();
   m_rotLFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getLeftFootFrame(),m_imuLFootFrame).getRotation();
   iDynTree::Rotation lIMUtoEarth = iDynTree::Rotation::RPY(imudataL(0),imudataL(1),imudataL(2));
   m_rotLEarthToWorld = lSoleToBase*m_rotLFTToSole*m_IMUToFT*lIMUtoEarth.inverse();
   
-  iDynTree::Rotation rSoleToBase = m_FKSolver->getRightFootToWorldTransform().getRotation();
+  iDynTree::Rotation rSoleToBase = worldOrt*m_FKSolver->getRightFootToWorldTransform().getRotation();
   m_rotRFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getRightFootFrame(),m_imuRFootFrame).getRotation();
   iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(imudataR(0),imudataR(1),imudataR(2));
   m_rotREarthToWorld = rSoleToBase*m_rotRFTToSole*m_IMUToFT*rIMUtoEarth.inverse();
@@ -2488,7 +2530,18 @@ bool WalkingModule::computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::V
 
 bool WalkingModule::computeEarthToWorldHead(yarp::sig::Vector imudata)
 {
-  iDynTree::Rotation headToBase = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
+  // when world is inclined
+  iDynTree::Rotation worldOrt = iDynTree::Rotation::Identity();
+  double worldPitch = 0;
+  double worldRoll = 0;
+  if(imudata(0) > m_IMUWorldThresholdRoll || imudata(1) > m_IMUWorldThresholdPitch)
+  {
+    worldRoll = imudata(0);
+    worldPitch = imudata(1);
+  }
+  
+  worldOrt = iDynTree::Rotation::RPY(worldRoll,worldPitch,0);
+  iDynTree::Rotation headToBase = worldOrt*m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
   iDynTree::Rotation IMUtoEarth = iDynTree::Rotation::RPY(imudata(0),imudata(1),imudata(2));
   m_rotHeadEarthToWorld = headToBase*IMUtoEarth.inverse();
 }
@@ -2508,7 +2561,7 @@ bool WalkingModule::computeHeadOrientation(yarp::sig::Vector imudata)
   m_rotHeadIMU = m_rotHeadEarthToWorld*IMUtoEarth;
 }
 
-bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR)
+bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR, bool prepare)
 {    
   // by default assume the feet to be on the same plane
   bool adaptOrt = false;
@@ -2571,15 +2624,15 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   
   if(m_useHeadIMU)
   {
-    if(m_rotHeadIMU.asRPY()(0) > m_IMUWorldThresholdRoll || m_rotHeadIMU.asRPY()(1) > m_IMUWorldThresholdPitch)
+    if(std::abs(m_rotHeadIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotHeadIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
       adaptOrt = true;
   }
   
   if(m_useFeetIMU)
   {
-    if(m_rotLFootIMU.asRPY()(0) > m_IMUWorldThresholdRoll || m_rotLFootIMU.asRPY()(1) > m_IMUWorldThresholdPitch)
+    if(std::abs(m_rotLFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotLFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
       adaptOrt = true;
-    if(m_rotRFootIMU.asRPY()(0) > m_IMUWorldThresholdRoll || m_rotRFootIMU.asRPY()(1) > m_IMUWorldThresholdPitch)
+    if(std::abs(m_rotRFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotRFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
       adaptOrt = true;
   }
   
@@ -2641,7 +2694,7 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
       newPitch = m_rotHeadIMU.asRPY()(0);
     }
     
-    inertiaRotMat = iDynTree::Rotation::RPY(newRoll,newPitch,m_inertial_R_worldFrame.asRPY()(2));
+    inertiaRotMat = iDynTree::Rotation::RPY(-newRoll,-newPitch,m_inertial_R_worldFrame.asRPY()(2));
     
     std::cout << "!!!!New angles: " << iDynTree::rad2deg(newRoll) << ", " << iDynTree::rad2deg(newPitch) << ", " << 
     iDynTree::rad2deg(m_inertial_R_worldFrame.asRPY()(2)) << std::endl;
@@ -2657,9 +2710,14 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   m_inertial_R_worldFrame_new = inertiaRotMat;
   m_ortChanged = adaptOrt;
   
-  if(m_ortChanged)
+  if(prepare)
+    m_inertial_R_worldFrame = m_inertial_R_worldFrame_new;
+  else
   {
-    smoothOrtTransition(m_inertial_R_worldFrame.asRPY(),m_inertial_R_worldFrame_new.asRPY(),m_inertial_R_worldFrame_vec);
+    if(m_ortChanged)
+    {
+      smoothOrtTransition(m_inertial_R_worldFrame.asRPY(),m_inertial_R_worldFrame_new.asRPY(),m_inertial_R_worldFrame_vec);
+    }
   }
   
   return true;
@@ -2955,6 +3013,8 @@ void WalkingModule::computeInclinationPlane()
   iDynTree::Vector3 angles = m_inertial_R_worldFrame.asRPY();
   m_planeKx = std::tan(angles(0));
   m_planeKy = std::tan(angles(1));
+//   if(m_walkingStatus == WalkingStatus::DSStable)
+//     std::cout << "Inclination plane: " << m_planeKx << ", " << m_planeKy << std::endl;
 }
 
 void WalkingModule::updateOmega(double zmpX, double zmpY)

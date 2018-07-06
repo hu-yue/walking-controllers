@@ -191,6 +191,8 @@ class WalkingModule:
     iDynTree::Rotation m_inertial_R_worldFrame_new;
     std::vector<iDynTree::Rotation> m_inertial_R_worldFrame_vec;
     double m_ortChangeIndex;
+    double m_nominalWorldPitch;
+    double m_nominalWorldRoll;
     
     // FT data
     bool m_useFTDetection;
@@ -427,7 +429,7 @@ class WalkingModule:
     bool computeFeetOrientation(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool computeEarthToWorldHead(yarp::sig::Vector imudata);
     bool computeHeadOrientation(yarp::sig::Vector imudata);
-    bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
+    bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR, bool prepare);
     bool parseIMUData();
     bool checkWalkingStatus();
     void computeInclinationPlane();

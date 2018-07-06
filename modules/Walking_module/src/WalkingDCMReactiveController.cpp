@@ -66,8 +66,8 @@ void WalkingDCMReactiveController::updateOmega(double comHeight)
 
 void WalkingDCMReactiveController::setBias(double accX, double accY)
 {
-    m_bias(0) = accX/(m_omega*m_omega);
-    m_bias(1) = accY/(m_omega*m_omega);
+    m_bias(0) = -accX/(m_omega*m_omega);
+    m_bias(1) = -accY/(m_omega*m_omega);
 }
 
 void WalkingDCMReactiveController::setFeedback(const iDynTree::Vector2& dcmFeedback)

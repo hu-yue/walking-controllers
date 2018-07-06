@@ -28,8 +28,8 @@ void WalkingController::updateOmega(double comHeight)
 
 void WalkingController::setBias(double accX, double accY)
 {
-  m_bias(0) = accX/(m_omega*m_omega);
-  m_bias(1) = accY/(m_omega*m_omega);
+  m_bias(0) = -accX/(m_omega*m_omega);
+  m_bias(1) = -accY/(m_omega*m_omega);
 }
 
 void WalkingController::evaluateDynamics()
