@@ -35,12 +35,11 @@ bool StableDCMModel::initialize(const yarp::os::Searchable& config)
         return false;
     }
     double gravityAcceleration = config.check("gravity_acceleration", yarp::os::Value(9.81)).asDouble();
-    iDynTree::Vector3 gravity;
-    gravity.zero();
-    gravity(2) = gravityAcceleration;
+    m_gravity.zero();
+    m_gravity(2) = gravityAcceleration;
     m_comHeight = comHeight;
     
-    updateOmega(gravity);
+    updateOmega(m_gravity);
 
     // set the sampling time
     double samplingTime;

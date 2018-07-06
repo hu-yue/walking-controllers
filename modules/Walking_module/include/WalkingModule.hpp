@@ -48,7 +48,7 @@
 #include "thrifts/WalkingCommands.h"
 
 enum class WalkingFSM {Idle, Configured, Prepared, Walking, OnTheFly, Stance};
-enum class WalkingStatus {LSS, RSS, DS, Unknown};
+enum class WalkingStatus {LSS, RSS, DS, DSStable, Unknown};
 
 /**
  * RFModule of the 2D-DCM dynamics model.
@@ -195,6 +195,8 @@ class WalkingModule:
     // FT data
     bool m_useFTDetection;
     double m_FTThreshold;
+    double m_forcesThreshold;
+    double m_velThreshold;
     bool m_useSkin;
     
     bool m_useIMUFiltering;
@@ -205,6 +207,8 @@ class WalkingModule:
     double m_IMUThresholdPitch;
     double m_IMUThresholdRoll;
     double m_IMUPlaneThreshold;
+    double m_IMUWorldThresholdPitch;
+    double m_IMUWorldThresholdRoll;
     double m_IMUSmoothingTime;
     double m_planeKx;
     double m_planeKy;
@@ -431,6 +435,9 @@ class WalkingModule:
     void updateOmega(iDynTree::Vector3& gravity);
     void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
     void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
+    bool checkSkinContact(std::string& link_name);
+    bool checkFeetVelocities();
+    bool checkFeetForces(yarp::sig::Vector& lFoot, yarp::sig::Vector& rFoot);
 
 public:
 

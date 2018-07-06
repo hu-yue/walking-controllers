@@ -462,3 +462,9 @@ bool WalkingFK::getCoMJacobian(iDynTree::MatrixDynSize &jacobian)
 {
     return m_kinDyn.getCenterOfMassJacobian(jacobian);
 }
+
+iDynTree::Twist WalkingFK::getFrameVelocity(std::string frame)
+{
+    return m_kinDyn.getFrameVel(frame);
+}
+

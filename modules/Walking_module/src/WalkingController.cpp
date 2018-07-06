@@ -552,6 +552,7 @@ bool WalkingController::getControllerOutput(iDynTree::Vector2& controllerOutput)
     }
 
     m_isSolutionEvaluated = false;
+//     std::cout << "========= Bias: " << m_bias.toString() << std::endl;
     controllerOutput(0) = m_output(0) - m_bias(0);
     controllerOutput(1) = m_output(1) - m_bias(1);
     return true;

@@ -229,6 +229,8 @@ public:
      * @return true/false in case of success/failure.
      */
     bool getCoMJacobian(iDynTree::MatrixDynSize &jacobian);
+    
+    iDynTree::Twist getFrameVelocity(std::string frame);
 };
 
 #endif
