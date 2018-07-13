@@ -185,16 +185,16 @@ class WalkingModule:
     std::string m_imuHeadFrame;
     std::string m_imuRFootFrame;
     std::string m_imuLFootFrame;
-    WalkingStatus m_walkingStatus;
-    WalkingStatus m_prevWalkingStatus;
-    bool m_DSSwitchedOut;
     iDynTree::Rotation m_inertial_R_worldFrame_new;
     std::vector<iDynTree::Rotation> m_inertial_R_worldFrame_vec;
     double m_ortChangeIndex;
     double m_nominalWorldPitch;
     double m_nominalWorldRoll;
     
-    // FT data
+    // Contact detection
+    WalkingStatus m_walkingStatus;
+    WalkingStatus m_prevWalkingStatus;
+    bool m_DSSwitchedOut;
     bool m_useFTDetection;
     double m_FTThreshold;
     double m_forcesThreshold;
@@ -245,6 +245,19 @@ class WalkingModule:
     iDynTree::Rotation m_rotLEarthToWorld; // orientation between the inertial of the earth according to the IMU and the world frame
     iDynTree::Rotation m_rotREarthToWorld;
     
+    // Skin data
+    int m_skinVecSize;
+    double m_skinPercentileThreshold;
+    int m_skinTaxelsThreshold;
+    yarp::sig::Vector* m_skinDataRightFoot;
+    yarp::sig::Vector* m_skinDataLeftFoot;
+    yarp::os::BufferedPort<yarp::sig::Vector> m_skinPortRightFoot;
+    yarp::os::BufferedPort<yarp::sig::Vector> m_skinPortLeftFoot;
+    yarp::os::Bottle* m_skinOrderRightFoot;
+    yarp::os::Bottle* m_skinOrderLeftFoot;
+    double m_skinFrontRightFoot;
+    double m_skinFrontLeftFoot;
+    
 
     // debug
     std::unique_ptr<iCub::ctrl::Integrator> m_velocityIntegral{nullptr};
@@ -270,6 +283,13 @@ class WalkingModule:
      * @return true in case of success and false otherwise.
      */
     bool configureIMU(const yarp::os::Searchable& config);
+    
+    /**
+     * Configure the skin.
+     * @param config is the reference to a resource finder object.
+     * @return true in case of success and false otherwise.
+     */
+    bool configureSkin(const yarp::os::Searchable& config);
 
     /**
      * Get the name of the controlled joints from the resource finder
@@ -437,7 +457,9 @@ class WalkingModule:
     void updateOmega(iDynTree::Vector3& gravity);
     void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
     void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
-    bool checkSkinContact(std::string& link_name);
+    bool checkSkinContact(WalkingStatus status);
+    bool checkSkinContact(std::string link);
+    bool parseSkinData();
     bool checkFeetVelocities();
     bool checkFeetForces(yarp::sig::Vector& lFoot, yarp::sig::Vector& rFoot);
 

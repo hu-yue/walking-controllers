@@ -543,6 +543,57 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
     return true;
 }
 
+bool WalkingModule::configureSkin(const yarp::os::Searchable& config)
+{
+  if(m_robot.compare("icubSim") == 0)
+  { 
+    yError() << "No skin available in simulation!";
+    return false;
+  }
+  
+  std::string RPortName = config.check("rightSkinPort", yarp::os::Value("/skin/right_foot")).asString();
+  std::string LPortName = config.check("leftSkinPort", yarp::os::Value("/skin/left_foot")).asString();
+  m_skinPortRightFoot.open("/" + getName() + "/skin/right_foot:i");
+  m_skinPortLeftFoot.open("/" + getName() + "/skin/left_foot:i");
+  if(!yarp::os::Network::connect("/" + m_robot + RPortName, "/" + getName() + "/skin/right_foot:i"))
+  {
+    yError() << "Unable to connect to port " << "/" + m_robot + RPortName;
+    return false;
+  }
+  if(!yarp::os::Network::connect("/" + m_robot + LPortName, "/" + getName() + "/skin/left_foot:i"))
+  {
+    yError() << "Unable to connect to port " << "/" + m_robot + LPortName;
+    return false;
+  }
+  
+  m_skinFrontRightFoot = config.check("rightSkinFront", yarp::os::Value(12)).asDouble();
+  m_skinFrontLeftFoot = config.check("leftSkinFront", yarp::os::Value(12)).asDouble();
+  m_skinOrderRightFoot = config.find("rightSkinOrder").asList();
+  m_skinOrderLeftFoot = config.find("leftSkinOrder").asList();
+  
+  if(m_skinOrderRightFoot->isNull() || m_skinOrderLeftFoot->isNull())
+  { 
+    yError() << "Skin order list not specified or wrong format!";
+    return false;
+  }
+  
+  if(m_skinFrontLeftFoot > m_skinOrderLeftFoot->size() || m_skinFrontRightFoot > m_skinOrderRightFoot->size())
+  {
+    yError() << "Frontal skin patches number is higher than the maximum number of patches!";
+    return false;
+  }
+  
+  m_skinVecSize = config.check("skinPortSize", yarp::os::Value(384)).asInt();
+  m_skinDataLeftFoot->resize(m_skinVecSize,240.0);
+  m_skinDataRightFoot->resize(m_skinVecSize,240.0);
+  
+  m_skinPercentileThreshold = config.check("skinContactThreshold", yarp::os::Value(100)).asDouble();
+  m_skinTaxelsThreshold = config.check("activeTaxelsThreshold", yarp::os::Value(10)).asInt();
+  
+  return true;
+}
+
+
 bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
 {
     // module name (used as prefix for opened ports)
@@ -620,6 +671,16 @@ bool WalkingModule::configure(yarp::os::ResourceFinder& rf)
       m_useHeadIMU = false;
       m_useIMUDS = false;
       m_useIMUFiltering = false;
+      m_useSkin = false;
+    }
+    
+    if(m_useSkin)
+    {
+      if(!configureSkin(IMUOptions))
+      {
+        yError() << "[configure] Unable to configure the skin.";
+        return false;
+      }
     }
 
     if(m_useMPC)
@@ -963,6 +1024,8 @@ bool WalkingModule::updateModule()
           if((m_useIMUDS && m_walkingStatus == WalkingStatus::DSStable) || !m_useIMUDS)
           {
             parseIMUData();
+            if(m_useSkin)
+              parseSkinData();
             if(m_updateOnceDS && !m_DSSwitchedOut && m_ortChanged)
               m_inertial_R_worldFrame = iDynTree::Rotation::Identity()*m_inertial_R_worldFrame;
             else
@@ -1852,6 +1915,8 @@ bool WalkingModule::prepareRobot(bool onTheFly)
           }
           
           parseIMUData();
+          if(m_useSkin)
+            parseSkinData();
           if(m_useHeadIMU)
           {
             if(m_useIMUFiltering)
@@ -2526,6 +2591,9 @@ bool WalkingModule::computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::V
   m_rotRFTToSole = m_FKSolver->getTransformBetweenFrames(m_IKSolver->getRightFootFrame(),m_imuRFootFrame).getRotation();
   iDynTree::Rotation rIMUtoEarth = iDynTree::Rotation::RPY(imudataR(0),imudataR(1),imudataR(2));
   m_rotREarthToWorld = rSoleToBase*m_rotRFTToSole*m_IMUToFT*rIMUtoEarth.inverse();
+  
+  std::cout << "l_sole to base: " << iDynTree::rad2deg(lSoleToBase.asRPY()(0)) << ", " << iDynTree::rad2deg(lSoleToBase.asRPY()(1)) << std::endl;
+  std::cout << "r_sole to base: " << iDynTree::rad2deg(rSoleToBase.asRPY()(0)) << ", " << iDynTree::rad2deg(rSoleToBase.asRPY()(1)) << std::endl;
 }
 
 bool WalkingModule::computeEarthToWorldHead(yarp::sig::Vector imudata)
@@ -2584,22 +2652,26 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
   
   if(m_useHeadIMU)
   {
-    headOrt = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
-    diffHeadRot = (headOrt.inverse()*m_rotHeadIMU).asRPY();
+//     headOrt = m_FKSolver->getFrameToWorldTransform(m_imuHeadFrame).getRotation();
+//     diffHeadRot = (headOrt.inverse()*m_rotHeadIMU).asRPY();
+    diffHeadRot = (m_rotHeadIMU.inverse()*m_inertial_R_worldFrame).asRPY();
   }
   
   if(m_useFeetIMU)
   {    
-    // check the threshold wrt the other stance foot
-    if(m_prevWalkingStatus == WalkingStatus::RSS)
-    {
-      diffRFootRot = (m_rotRFootIMU.inverse()*m_rotRFootIMU).asRPY();
-      diffLFootRot = (m_rotRFootIMU.inverse()*m_rotLFootIMU).asRPY();
-    } else if(m_prevWalkingStatus == WalkingStatus::LSS)
-    {
-      diffRFootRot = (m_rotLFootIMU.inverse()*m_rotRFootIMU).asRPY();
-      diffLFootRot = (m_rotLFootIMU.inverse()*m_rotLFootIMU).asRPY();
-    }
+//     // check the threshold wrt the other stance foot
+//     if(m_prevWalkingStatus == WalkingStatus::RSS)
+//     {
+//       diffRFootRot = (m_rotRFootIMU.inverse()*m_rotRFootIMU).asRPY();
+//       diffLFootRot = (m_rotRFootIMU.inverse()*m_rotLFootIMU).asRPY();
+//     } else if(m_prevWalkingStatus == WalkingStatus::LSS)
+//     {
+//       diffRFootRot = (m_rotLFootIMU.inverse()*m_rotRFootIMU).asRPY();
+//       diffLFootRot = (m_rotLFootIMU.inverse()*m_rotLFootIMU).asRPY();
+//     }
+
+    diffRFootRot = (m_rotRFootIMU.inverse()*m_inertial_R_worldFrame).asRPY();
+    diffLFootRot = (m_rotLFootIMU.inverse()*m_inertial_R_worldFrame).asRPY();
   }
   
   if(m_useHeadIMU)
@@ -2622,24 +2694,24 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
       adaptOrt = true;
   }
   
-  if(m_useHeadIMU)
-  {
-    if(std::abs(m_rotHeadIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotHeadIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
-      adaptOrt = true;
-  }
-  
-  if(m_useFeetIMU)
-  {
-    if(std::abs(m_rotLFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotLFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
-      adaptOrt = true;
-    if(std::abs(m_rotRFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotRFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
-      adaptOrt = true;
-  }
+//   if(m_useHeadIMU)
+//   {
+//     if(std::abs(m_rotHeadIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotHeadIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
+//       adaptOrt = true;
+//   }
+//   
+//   if(m_useFeetIMU)
+//   {
+//     if(std::abs(m_rotLFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotLFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
+//       adaptOrt = true;
+//     if(std::abs(m_rotRFootIMU.asRPY()(0) - m_nominalWorldRoll) > m_IMUWorldThresholdRoll || std::abs(m_rotRFootIMU.asRPY()(1) - m_nominalWorldPitch) > m_IMUWorldThresholdPitch)
+//       adaptOrt = true;
+//   }
   
   if(m_walkingStatus == WalkingStatus::DSStable)
   {
     std::cout << "Right foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
-    std::cout << "Left foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
+    std::cout << "Left foot IMU: " << iDynTree::rad2deg(imudataL(0)) << ", " << iDynTree::rad2deg(imudataL(1)) << std::endl;
     std::cout << "Right foot: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << std::endl;
     std::cout << "Left foot: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << std::endl;
   }
@@ -2654,7 +2726,7 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
       if(m_walkingStatus == WalkingStatus::DSStable)
       {
         // if feet not on the same plane, otherwise use the new touchdown foot
-        if(std::abs(diffLFootRot(0) - diffRFootRot(0)) > m_IMUPlaneThreshold)
+        if(std::abs(m_rotRFootIMU.asRPY()(0) - m_rotLFootIMU.asRPY()(0)) > m_IMUPlaneThreshold)
         {
           newRoll = (m_rotRFootIMU.asRPY()(0) + m_rotLFootIMU.asRPY()(0))/2;
         }
@@ -2665,7 +2737,7 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
           else
             newRoll = m_rotRFootIMU.asRPY()(0);
         }
-        if(std::abs(diffLFootRot(1) - diffRFootRot(1)) > m_IMUPlaneThreshold)
+        if(std::abs(m_rotRFootIMU.asRPY()(1) + m_rotLFootIMU.asRPY()(1)) > m_IMUPlaneThreshold)
         {
           newPitch = (m_rotRFootIMU.asRPY()(1) + m_rotLFootIMU.asRPY()(1))/2;
         }
@@ -2861,7 +2933,7 @@ bool WalkingModule::checkWalkingStatus()
         m_walkingStatus = WalkingStatus::Unknown;
     else if(leftWrench(2) > m_FTThreshold && rightWrench(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DSStable) && m_walkingStatus == WalkingStatus::DS)
     {
-      if(checkFeetForces(leftWrench,rightWrench) || checkFeetVelocities())
+      if(checkFeetForces(leftWrench,rightWrench) || checkFeetVelocities() || (m_useSkin && checkSkinContact(m_prevWalkingStatus)))
       {
         m_walkingStatus = WalkingStatus::DSStable;
         m_ortChanged = false;
@@ -3003,8 +3075,77 @@ bool WalkingModule::checkFeetVelocities()
 }
 
 
-bool WalkingModule::checkSkinContact(std::string& link_name)
+bool WalkingModule::checkSkinContact(WalkingStatus status)
 {
+  if(status == WalkingStatus::RSS)
+    return checkSkinContact("r_sole");
+  else if(status == WalkingStatus::LSS)
+    return checkSkinContact("l_sole");
+  return false;
+}
+
+bool WalkingModule::checkSkinContact(std::string link)
+{
+  bool stableContact = false;
+  yarp::sig::Vector* skinDataVector;
+  yarp::os::Bottle* skinOrder;
+  int frontPatches;
+  int backPatches;
+  if(link == "l_sole")
+  {
+    skinDataVector = m_skinDataLeftFoot;
+    skinOrder = m_skinOrderLeftFoot;
+    frontPatches = m_skinFrontLeftFoot;
+  } else if(link == "r_sole")
+  {
+    skinDataVector = m_skinDataRightFoot;
+    skinOrder = m_skinOrderRightFoot;
+    frontPatches = m_skinFrontRightFoot;
+  }
+  
+  backPatches = skinOrder->size() - frontPatches;
+  
+  // Check frontal paches
+  int activeTaxelsFront = 0;
+  for(int i = 0; i < frontPatches; i++)
+  {
+    int currSkinIdx = skinOrder->get(i).asInt();
+    for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
+    {
+      if(skinDataVector->operator[]((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        activeTaxelsFront++;
+    }
+  }
+  
+  int activeTaxelsBack = 0;
+  for(int i = backPatches; i < skinOrder->size(); i++)
+  {
+    int currSkinIdx = skinOrder->get(i).asInt();
+    for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
+    {
+      if(skinDataVector->operator[]((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        activeTaxelsBack++;
+    }
+  }
+  
+  if(activeTaxelsFront > m_skinTaxelsThreshold && activeTaxelsBack > m_skinTaxelsThreshold)
+    stableContact = true;
+  else
+    stableContact = false;
+  
+  return stableContact;
+}
+
+bool WalkingModule::parseSkinData()
+{
+  m_skinDataRightFoot = m_skinPortRightFoot.read(false);
+  m_skinDataLeftFoot = m_skinPortLeftFoot.read(false);
+  
+  if(m_skinDataRightFoot == NULL)
+    return true;
+  if(m_skinDataLeftFoot == NULL)
+    return true;
+  
   return true;
 }
 
