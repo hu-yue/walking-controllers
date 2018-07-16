@@ -566,6 +566,12 @@ bool WalkingModule::configureSkin(const yarp::os::Searchable& config)
     return false;
   }
   
+  m_skinEventsPort.open("/" + getName() + "/skin:i");
+  if(!yarp::os::Network::connect("/skinManager/skin_events:o", "/" + getName() + "/skin:i")){
+    yError() << "Unable to connect to SKIN EVENTS port. Is the skinManager on?";
+    return false;
+  }
+  
   m_skinFrontRightFoot = config.check("rightSkinFront", yarp::os::Value(12)).asDouble();
   m_skinFrontLeftFoot = config.check("leftSkinFront", yarp::os::Value(12)).asDouble();
   m_skinOrderRightFoot = config.find("rightSkinOrder").asList();
@@ -875,6 +881,13 @@ bool WalkingModule::close()
         m_RFootIMUPort.close();
         m_LFootIMUPort.close();
       }
+    }
+    
+    if(m_useSkin)
+    {
+      m_skinEventsPort.close();
+      m_skinPortLeftFoot.close();
+      m_skinPortRightFoot.close();
     }
 
     return true;
@@ -2929,11 +2942,17 @@ bool WalkingModule::checkWalkingStatus()
   // check walking status according to wrench measurements if useFTDetection
   if(m_useFTDetection)
   {
+    WalkingStatus contactStatus; // the foot to be checked
+    if(m_prevWalkingStatus == WalkingStatus::RSS)
+      contactStatus = WalkingStatus::LSS;
+    else if(m_prevWalkingStatus == WalkingStatus::LSS)
+      contactStatus = WalkingStatus::RSS;
+    
     if(leftWrench(2) <= m_FTThreshold && rightWrench(2) <= m_FTThreshold)
         m_walkingStatus = WalkingStatus::Unknown;
     else if(leftWrench(2) > m_FTThreshold && rightWrench(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DSStable) && m_walkingStatus == WalkingStatus::DS)
     {
-      if(checkFeetForces(leftWrench,rightWrench) || checkFeetVelocities() || (m_useSkin && checkSkinContact(m_prevWalkingStatus)))
+      if(checkFeetForces(leftWrench,rightWrench) || checkFeetVelocities() || (m_useSkin && checkSkinContact(contactStatus)))
       {
         m_walkingStatus = WalkingStatus::DSStable;
         m_ortChanged = false;
@@ -3029,10 +3048,6 @@ bool WalkingModule::checkFeetForces(yarp::sig::Vector& leftWrench, yarp::sig::Ve
   yarp::sig::Vector forcesR(4);
   computeFootForces(leftWrench,forcesL);
   computeFootForces(rightWrench,forcesR);
-//   std::cout << "Wrench left: " << leftWrench.toString() << std::endl;
-//   std::cout << "Wrench right: " << rightWrench.toString() << std::endl;
-//   std::cout << "Forces L foot: " << forcesL.toString() << std::endl;
-//   std::cout << "Forces R foot: " << forcesR.toString() << std::endl;
   if(forcesL(0) > m_forcesThreshold && forcesL(1) > m_forcesThreshold && forcesL(2) > m_forcesThreshold && forcesL(3) > m_forcesThreshold && 
     forcesR(0) > m_forcesThreshold && forcesR(1) > m_forcesThreshold && forcesR(2) > m_forcesThreshold && forcesR(3) > m_forcesThreshold)
     return true;
@@ -3048,9 +3063,6 @@ bool WalkingModule::checkFeetVelocities()
   
   l_foot_twist = m_FKSolver->getFrameVelocity(m_IKSolver->getLeftFootFrame());
   r_foot_twist = m_FKSolver->getFrameVelocity(m_IKSolver->getRightFootFrame());
-  
-//   std::cout << "====== L foot twist: " << l_foot_twist.toString() << std::endl;
-//   std::cout << "====== R foot twist: " << r_foot_twist.toString() << std::endl;
   
   double linNormL = 0;
   double linNormR = 0;
@@ -3084,6 +3096,7 @@ bool WalkingModule::checkSkinContact(WalkingStatus status)
   return false;
 }
 
+// check the number of active taxels
 bool WalkingModule::checkSkinContact(std::string link)
 {
   bool stableContact = false;
@@ -3138,13 +3151,26 @@ bool WalkingModule::checkSkinContact(std::string link)
 
 bool WalkingModule::parseSkinData()
 {
+  m_skinContactListiCub->clear();
+  m_skinContactListLFoot.clear();
+  m_skinContactListRFoot.clear();
+  
   m_skinDataRightFoot = m_skinPortRightFoot.read(false);
   m_skinDataLeftFoot = m_skinPortLeftFoot.read(false);
+  m_skinContactListiCub = m_skinEventsPort.read(false);
   
   if(m_skinDataRightFoot == NULL)
     return true;
   if(m_skinDataLeftFoot == NULL)
     return true;
+  if(m_skinContactListiCub == NULL)
+    return true;
+  
+  if(m_skinContactListiCub!=NULL)
+  {
+    m_skinContactListRFoot = m_skinContactListiCub->splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
+    m_skinContactListLFoot = m_skinContactListiCub->splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
+  }
   
   return true;
 }
@@ -3211,4 +3237,97 @@ void WalkingModule::smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector
   }
   
   m_ortChangeIndex = 0;
+}
+
+yarp::sig::Vector WalkingModule::getTaxelPositionCustom(int taxelID, iCub::skinDynLib::skinPart& skinPart)
+{
+  yarp::sig::Vector taxelPos;
+  taxelPos.resize(3,-1);
+  int N = skinPart.taxels.size();
+  for(int i = 0; i < N; i++)
+  {
+    if(skinPart.taxels[i]->getID() == taxelID)
+    {
+      taxelPos = skinPart.taxels[i]->getPosition();
+      break;
+    }
+  }
+  
+  return taxelPos;
+}
+
+bool WalkingModule::setTaxelPosesFromFile(const std::string _filePath, iCub::skinDynLib::skinPart& skinPart)
+{
+  // Get the filename from the full absolute path
+  std::string filename = "";
+  filename = strrchr(_filePath.c_str(), '/');
+  filename = filename.c_str() ? filename.c_str() + 1 : _filePath.c_str();
+  
+  yarp::os::ResourceFinder rf;
+  rf.setVerbose(false);
+  rf.setDefaultContext("skinGui");            //overridden by --context parameter
+  rf.setDefaultConfigFile(_filePath.c_str()); //overridden by --from parameter
+  rf.configure(0,NULL);
+  rf.setVerbose(true);
+  
+  if (rf.check("spatial_sampling"))
+  {
+    std::string _ss=rf.find("spatial_sampling").asString();
+    if(_ss!="")
+      skinPart.spatial_sampling = _ss;   
+    else
+      skinPart.spatial_sampling = "taxel";
+  }
+  else
+  {
+    yWarning("[skinPart::setTaxelPosesFromFile] no spatial_sampling field found.");
+    skinPart.spatial_sampling = "taxel";
+  }
+  
+  yarp::os::Bottle &calibration = rf.findGroup("calibration");
+  if (calibration.isNull())
+  {
+    yWarning("[skinPart::setTaxelPosesFromFile] No calibration group found!");
+    return false;
+  }
+  
+  // First item of the bottle is "calibration", so we should not use it
+  skinPart.setSize(calibration.size()-1);
+  skinPart.taxels.resize(skinPart.getTaxelsSize());
+  yarp::sig::Vector taxelPos(3,0.0);
+  yarp::sig::Vector taxelNrm(3,0.0);
+  yarp::sig::Vector taxelPosNrm(6,0.0);
+  
+  for (int i = 1; i < skinPart.getSize(); i++)
+  {
+    taxelPosNrm = iCub::skinDynLib::vectorFromBottle(*(calibration.get(i).asList()),0,6);
+    taxelPos = taxelPosNrm.subVector(0,2);
+    taxelNrm = taxelPosNrm.subVector(3,5);
+    // the NULL taxels will be automatically discarded 
+    if (yarp::math::norm(taxelNrm) != 0 || yarp::math::norm(taxelPos) != 0)
+    {
+      skinPart.taxels.push_back(new iCub::skinDynLib::Taxel(taxelPos,taxelNrm,i-1));
+    }
+  }
+  
+  // Let's read the mapping of the taxels onto the center of their triangle
+  // even if the spatial_sampling variable is "taxel"
+  // (it might come useful later)
+  if (rf.check("taxel2Repr"))
+  {
+    yarp::os::Bottle b = *(rf.find("taxel2Repr").asList());
+    
+    for (int i = 0; i < skinPart.getSize(); i++)
+    {
+      skinPart.taxel2Repr.push_back(b.get(i).asInt());
+    }
+    skinPart.initRepresentativeTaxels();
+  }
+  else
+  {
+    yError("[skinPart::setTaxelPosesFromFile] No 'taxel2Repr' field found");
+    return false;
+  }
+  
+  return true;
 }

@@ -45,6 +45,11 @@
 #include <iCub/ctrl/filters.h>
 #include <iCub/ctrl/minJerkCtrl.h>
 
+// Skin handling
+#include <iCub/skinDynLib/skinContactList.h>
+#include <iCub/skinDynLib/skinContact.h>
+#include <iCub/skinDynLib/skinPart.h>
+
 #include "thrifts/WalkingCommands.h"
 
 enum class WalkingFSM {Idle, Configured, Prepared, Walking, OnTheFly, Stance};
@@ -249,6 +254,8 @@ class WalkingModule:
     int m_skinVecSize;
     double m_skinPercentileThreshold;
     int m_skinTaxelsThreshold;
+    
+    // Raw skin data
     yarp::sig::Vector* m_skinDataRightFoot;
     yarp::sig::Vector* m_skinDataLeftFoot;
     yarp::os::BufferedPort<yarp::sig::Vector> m_skinPortRightFoot;
@@ -257,6 +264,15 @@ class WalkingModule:
     yarp::os::Bottle* m_skinOrderLeftFoot;
     double m_skinFrontRightFoot;
     double m_skinFrontLeftFoot;
+    
+    // skin data from manager
+    iCub::skinDynLib::skinPart                m_skinPartLFoot;    
+    iCub::skinDynLib::skinPart                m_skinPartRFoot;  
+    
+    iCub::skinDynLib::skinContactList*        m_skinContactListiCub;
+    iCub::skinDynLib::skinContactList         m_skinContactListRFoot;
+    iCub::skinDynLib::skinContactList         m_skinContactListLFoot;
+    yarp::os::BufferedPort<iCub::skinDynLib::skinContactList> m_skinEventsPort;
     
 
     // debug
@@ -445,23 +461,31 @@ class WalkingModule:
     
     
     // IMU functions
+    bool parseIMUData();
     bool computeEarthToWorld(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool computeFeetOrientation(yarp::sig::Vector imudataL, yarp::sig::Vector imudataR);
     bool computeEarthToWorldHead(yarp::sig::Vector imudata);
     bool computeHeadOrientation(yarp::sig::Vector imudata);
+    
+    // Modifications to the model
     bool updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig::Vector imudataL, yarp::sig::Vector imudataR, bool prepare);
-    bool parseIMUData();
-    bool checkWalkingStatus();
     void computeInclinationPlane();
     void updateOmega(double zmpX, double zmpY);
     void updateOmega(iDynTree::Vector3& gravity);
     void smoothOrtTransition(iDynTree::Vector3 rpyI, iDynTree::Vector3 rpyId, std::vector <iDynTree::Rotation>& rotVec);
-    void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
-    bool checkSkinContact(WalkingStatus status);
-    bool checkSkinContact(std::string link);
-    bool parseSkinData();
+    
+    // Check contact status
+    bool checkWalkingStatus();
     bool checkFeetVelocities();
     bool checkFeetForces(yarp::sig::Vector& lFoot, yarp::sig::Vector& rFoot);
+    void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
+    
+    // Skin
+    bool parseSkinData();
+    bool checkSkinContact(WalkingStatus status);
+    bool checkSkinContact(std::string link);
+    yarp::sig::Vector getTaxelPositionCustom(int taxelID, iCub::skinDynLib::skinPart& skinPart);
+    bool setTaxelPosesFromFile(const std::string _filePath, iCub::skinDynLib::skinPart& skinPart);
 
 public:
 
