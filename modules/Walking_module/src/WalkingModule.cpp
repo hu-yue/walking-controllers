@@ -3197,7 +3197,7 @@ bool WalkingModule::checkWalkingStatus()
     }
     else if(m_leftInContact.front() && !m_rightInContact.front() && m_walkingStatus!=WalkingStatus::LSS)
     {
-      m_prevWalkingStatus = m_walkingStatus;
+      m_prevWalkingStatus = WalkingStatus::RSS;
       m_walkingStatus = WalkingStatus::LSS;
       yInfo() << "!! Change status to LSS";
       m_ortChanged = false;
@@ -3205,7 +3205,7 @@ bool WalkingModule::checkWalkingStatus()
     }
     else if(m_rightInContact.front() && !m_leftInContact.front() && m_walkingStatus!=WalkingStatus::RSS)
     {
-      m_prevWalkingStatus = m_walkingStatus;
+      m_prevWalkingStatus = WalkingStatus::LSS;
       m_walkingStatus = WalkingStatus::RSS;
       yInfo() << "!! Change status to RSS";
       m_ortChanged = false;
@@ -3266,11 +3266,20 @@ bool WalkingModule::checkFeetForces(iDynTree::Wrench& leftWrench, iDynTree::Wren
   iDynTree::Wrench rightWrenchCenter = m_leftCenterOffsetTransform*rightWrench;
   computeFootForces(leftWrenchCenter,forcesL);
   computeFootForces(rightWrenchCenter,forcesR);
-  if(forcesL(0) > m_forcesThreshold && forcesL(1) > m_forcesThreshold && forcesL(2) > m_forcesThreshold && forcesL(3) > m_forcesThreshold && 
-    forcesR(0) > m_forcesThreshold && forcesR(1) > m_forcesThreshold && forcesR(2) > m_forcesThreshold && forcesR(3) > m_forcesThreshold)
-    return true;
-  else
-    return false;
+  
+  if(m_prevWalkingStatus == WalkingStatus::RSS)
+  {
+    if(forcesL(0) > m_forcesThreshold && forcesL(1) > m_forcesThreshold && forcesL(2) > m_forcesThreshold && forcesL(3) > m_forcesThreshold)
+      return true;
+  }
+  
+  if(m_prevWalkingStatus == WalkingStatus::LSS)
+  {
+    if(forcesR(0) > m_forcesThreshold && forcesR(1) > m_forcesThreshold && forcesR(2) > m_forcesThreshold && forcesR(3) > m_forcesThreshold)
+      return true;
+  }
+  
+  return false;
 }
 
 bool WalkingModule::checkFeetVelocities()
@@ -3298,10 +3307,14 @@ bool WalkingModule::checkFeetVelocities()
   angNormL = std::sqrt(angNormL);
   angNormR = std::sqrt(angNormR);
   
-  if(linNormL < m_velThreshold && linNormR < m_velThreshold && angNormL < m_velThreshold && angNormR < m_velThreshold)
-    return true;
-  else
-    return false;
+  if(m_prevWalkingStatus == WalkingStatus::RSS)
+    if(linNormL < m_velThreshold && angNormL < m_velThreshold)
+      return true;
+  if(m_prevWalkingStatus == WalkingStatus::RSS)
+    if(linNormR < m_velThreshold && angNormR < m_velThreshold)
+      return true;
+
+  return false;
 }
 
 
