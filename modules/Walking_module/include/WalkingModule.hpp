@@ -271,8 +271,8 @@ class WalkingModule:
     std::string m_rightTaxelFile;
     
     // Raw skin data
-    yarp::sig::Vector* m_skinDataRightFoot;
-    yarp::sig::Vector* m_skinDataLeftFoot;
+    yarp::sig::Vector m_skinDataRightFoot;
+    yarp::sig::Vector m_skinDataLeftFoot;
     yarp::os::BufferedPort<yarp::sig::Vector> m_skinPortRightFoot;
     yarp::os::BufferedPort<yarp::sig::Vector> m_skinPortLeftFoot;
     yarp::os::Bottle* m_skinOrderRightFoot;
@@ -284,7 +284,7 @@ class WalkingModule:
     iCub::skinDynLib::skinPart                m_skinPartLFoot;    
     iCub::skinDynLib::skinPart                m_skinPartRFoot;  
     
-    iCub::skinDynLib::skinContactList*        m_skinContactListiCub;
+    iCub::skinDynLib::skinContactList         m_skinContactListiCub;
     iCub::skinDynLib::skinContactList         m_skinContactListRFoot;
     iCub::skinDynLib::skinContactList         m_skinContactListLFoot;
     yarp::os::BufferedPort<iCub::skinDynLib::skinContactList> m_skinEventsPort;

@@ -760,8 +760,8 @@ bool WalkingModule::configureSkin(const yarp::os::Searchable& config)
   }
   
   m_skinVecSize = config.check("skinPortSize", yarp::os::Value(384)).asInt();
-  m_skinDataLeftFoot->resize(m_skinVecSize,240.0);
-  m_skinDataRightFoot->resize(m_skinVecSize,240.0);
+  m_skinDataLeftFoot.resize(m_skinVecSize,240.0);
+  m_skinDataRightFoot.resize(m_skinVecSize,240.0);
   
   m_skinPercentileThreshold = config.check("skinContactThreshold", yarp::os::Value(200)).asDouble();
   m_skinTaxelsThreshold = config.check("activeTaxelsThreshold", yarp::os::Value(10)).asInt();
@@ -2134,12 +2134,12 @@ bool WalkingModule::prepareRobot(bool onTheFly)
 	// set up the IMU
 	if(m_useHeadIMU || m_useFeetIMU)
         {
-          checkWalkingStatus();
-          if(m_walkingStatus == WalkingStatus::Unknown)
-          {
-            yError() << "[IMU] Unknown walking status!";
-            return false;
-          }
+          //checkWalkingStatus();
+          //if(m_walkingStatus == WalkingStatus::Unknown)
+          //{
+            //yError() << "[IMU] Unknown walking status!";
+            //return false;
+          //}
           
           parseIMUData();
           if(m_useSkin)
@@ -3351,7 +3351,7 @@ bool WalkingModule::checkSkinContact(std::string link)
   }
   else
   {
-    yarp::sig::Vector* skinDataVector;
+    yarp::sig::Vector skinDataVector;
     yarp::os::Bottle* skinOrder;
     int activeTaxelsFront = 0;
     int activeTaxelsBack = 0;
@@ -3377,7 +3377,7 @@ bool WalkingModule::checkSkinContact(std::string link)
       int currSkinIdx = skinOrder->get(i).asInt();
       for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
       {
-        if(skinDataVector->operator[]((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        if(skinDataVector((k+1)*currSkinIdx) > m_skinPercentileThreshold)
           activeTaxelsFront++;
       }
     }
@@ -3387,7 +3387,7 @@ bool WalkingModule::checkSkinContact(std::string link)
       int currSkinIdx = skinOrder->get(i).asInt();
       for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
       {
-        if(skinDataVector->operator[]((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        if(skinDataVector((k+1)*currSkinIdx) > m_skinPercentileThreshold)
           activeTaxelsBack++;
       }
     }
@@ -3401,27 +3401,28 @@ bool WalkingModule::checkSkinContact(std::string link)
 
 bool WalkingModule::parseSkinData()
 {
-  m_skinContactListiCub->clear();
+  m_skinContactListiCub.clear();
   m_skinContactListLFoot.clear();
   m_skinContactListRFoot.clear();
+
+  iCub::skinDynLib::skinContactList* skinContactListiCub = m_skinEventsPort.read(false);
+  yarp::sig::Vector* skinLeft = m_skinPortLeftFoot.read(false);
+  yarp::sig::Vector* skinRight = m_skinPortRightFoot.read(false);
   
-  m_skinDataRightFoot = m_skinPortRightFoot.read(false);
-  m_skinDataLeftFoot = m_skinPortLeftFoot.read(false);
-  m_skinContactListiCub = m_skinEventsPort.read(false);
-  
-  if(m_skinDataRightFoot == NULL)
+  if(skinLeft == NULL)
     return true;
-  if(m_skinDataLeftFoot == NULL)
+  if(skinRight == NULL)
     return true;
-  if(m_skinContactListiCub == NULL)
+  if(skinContactListiCub == NULL)
     return true;
-  
-  if(m_skinContactListiCub!=NULL)
-  {
-    m_skinContactListRFoot = m_skinContactListiCub->splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
-    m_skinContactListLFoot = m_skinContactListiCub->splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
-  }
-  
+
+  m_skinDataRightFoot = *skinRight;
+  m_skinDataLeftFoot = *skinLeft;
+  m_skinContactListiCub = *skinContactListiCub;
+
+  m_skinContactListRFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
+  m_skinContactListLFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
+
   return true;
 }
 
