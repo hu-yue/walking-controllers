@@ -2925,13 +2925,13 @@ bool WalkingModule::updateInertiaRWorld(yarp::sig::Vector imudataHead, yarp::sig
 //   }
   
   // Debug output
-  if(m_walkingStatus == WalkingStatus::DSStable)
-  {
-    std::cout << "Right foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
-    std::cout << "Left foot IMU: " << iDynTree::rad2deg(imudataL(0)) << ", " << iDynTree::rad2deg(imudataL(1)) << std::endl;
-    std::cout << "Right foot: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << std::endl;
-    std::cout << "Left foot: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << std::endl;
-  }
+  //if(m_walkingStatus == WalkingStatus::DSStable)
+  //{
+    //std::cout << "Right foot IMU: " << iDynTree::rad2deg(imudataR(0)) << ", " << iDynTree::rad2deg(imudataR(1)) << std::endl;
+    //std::cout << "Left foot IMU: " << iDynTree::rad2deg(imudataL(0)) << ", " << iDynTree::rad2deg(imudataL(1)) << std::endl;
+    //std::cout << "Right foot: " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotRFootIMU.asRPY()(1)) << std::endl;
+    //std::cout << "Left foot: " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(0)) << ", " << iDynTree::rad2deg(m_rotLFootIMU.asRPY()(1)) << std::endl;
+  //}
   
   if(adaptOrt)
   {    
@@ -3377,7 +3377,7 @@ bool WalkingModule::checkSkinContact(std::string link)
       int currSkinIdx = skinOrder->get(i).asInt();
       for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
       {
-        if(skinDataVector((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        if(skinDataVector((k+1)*currSkinIdx) < m_skinPercentileThreshold)
           activeTaxelsFront++;
       }
     }
@@ -3387,24 +3387,24 @@ bool WalkingModule::checkSkinContact(std::string link)
       int currSkinIdx = skinOrder->get(i).asInt();
       for(int k = 0; k < 12; k++) // 12 is the number of taxels in a triangle
       {
-        if(skinDataVector((k+1)*currSkinIdx) > m_skinPercentileThreshold)
+        if(skinDataVector((k+1)*currSkinIdx) < m_skinPercentileThreshold)
           activeTaxelsBack++;
       }
     }
+    yInfo() << "-------- Checked contact with skin.";  
     
     if(activeTaxelsFront > m_skinTaxelsThreshold && activeTaxelsBack > m_skinTaxelsThreshold)
       stableContact = true;
   }
-  
+
+  if(stableContact)
+    yInfo() << "-------- Stable contact with skin.";  
+
   return stableContact;
 }
 
 bool WalkingModule::parseSkinData()
 {
-  m_skinContactListiCub.clear();
-  m_skinContactListLFoot.clear();
-  m_skinContactListRFoot.clear();
-
   iCub::skinDynLib::skinContactList* skinContactListiCub = m_skinEventsPort.read(false);
   yarp::sig::Vector* skinLeft = m_skinPortLeftFoot.read(false);
   yarp::sig::Vector* skinRight = m_skinPortRightFoot.read(false);
@@ -3413,15 +3413,23 @@ bool WalkingModule::parseSkinData()
     return true;
   if(skinRight == NULL)
     return true;
-  if(skinContactListiCub == NULL)
+  if(m_useSkinTaxelPosition && skinContactListiCub == NULL)
     return true;
+
+  //m_skinContactListiCub.clear();
+  //m_skinContactListLFoot.clear();
+  //m_skinContactListRFoot.clear();
 
   m_skinDataRightFoot = *skinRight;
   m_skinDataLeftFoot = *skinLeft;
-  m_skinContactListiCub = *skinContactListiCub;
+  if(m_useSkinTaxelPosition)
+  {
+    m_skinContactListiCub = *skinContactListiCub;
+    m_skinContactListRFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
+    m_skinContactListLFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
+  }
 
-  m_skinContactListRFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
-  m_skinContactListLFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
+  yInfo() << "-------Parsed skin data. ";
 
   return true;
 }
