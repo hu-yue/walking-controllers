@@ -521,8 +521,8 @@ class WalkingModule:
     // Check contact status
     bool checkWalkingStatus();
     bool checkFeetVelocities();
-    bool checkFeetForces(yarp::sig::Vector& lFoot, yarp::sig::Vector& rFoot);
-    void computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces);
+    bool checkFeetForces(iDynTree::Wrench& leftWrench, iDynTree::Wrench& rightWrench);
+    void computeFootForces(iDynTree::Wrench& wrench, yarp::sig::Vector& forces);
     
     // Skin
     bool parseSkinData();

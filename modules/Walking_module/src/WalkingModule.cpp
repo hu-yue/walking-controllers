@@ -3130,19 +3130,19 @@ bool WalkingModule::parseIMUData()
 bool WalkingModule::checkWalkingStatus()
 {
   // use 4 forces
-  yarp::sig::Vector leftWrench(m_leftWrenchInput.size());
-  yarp::sig::Vector rightWrench(m_rightWrenchInput.size());
+//   yarp::sig::Vector leftWrench(m_leftWrenchInput.size());
+//   yarp::sig::Vector rightWrench(m_rightWrenchInput.size());
   
-  if(m_useWrenchFilter)
-  {
-    leftWrench = m_leftWrenchInputFiltered;
-    rightWrench = m_rightWrenchInputFiltered;
-  }
-  else
-  {
-    leftWrench = m_leftWrenchInput;
-    rightWrench = m_rightWrenchInput;
-  }
+//   if(m_useWrenchFilter)
+//   {
+//     leftWrench = m_leftWrenchInputFiltered;
+//     rightWrench = m_rightWrenchInputFiltered;
+//   }
+//   else
+//   {
+//     leftWrench = m_leftWrenchInput;
+//     rightWrench = m_rightWrenchInput;
+//   }
   // check walking status according to wrench measurements if useFTDetection
   if(m_useFTDetection || m_useVelocityDetection || m_useSkin)
   {
@@ -3152,11 +3152,11 @@ bool WalkingModule::checkWalkingStatus()
     else if(m_prevWalkingStatus == WalkingStatus::LSS)
       contactStatus = WalkingStatus::RSS;
     
-    if(leftWrench(2) <= m_FTThreshold && rightWrench(2) <= m_FTThreshold)
+    if(m_leftWrench.getLinearVec3()(2) <= m_FTThreshold && m_rightWrench.getLinearVec3()(2) <= m_FTThreshold)
         m_walkingStatus = WalkingStatus::Unknown;
-    else if(leftWrench(2) > m_FTThreshold && rightWrench(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DSStable) && m_walkingStatus == WalkingStatus::DS)
+    else if(m_leftWrench.getLinearVec3()(2) > m_FTThreshold && m_rightWrench.getLinearVec3()(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DSStable) && m_walkingStatus == WalkingStatus::DS)
     {
-      if((m_useFTDetection?checkFeetForces(leftWrench,rightWrench):true) && (m_useVelocityDetection?checkFeetVelocities():true) && (m_useSkin?checkSkinContact(contactStatus):true))
+      if((m_useFTDetection?checkFeetForces(m_leftWrench,m_rightWrench):true) && (m_useVelocityDetection?checkFeetVelocities():true) && (m_useSkin?checkSkinContact(contactStatus):true))
       {
         m_walkingStatus = WalkingStatus::DSStable;
         m_ortChanged = false;
@@ -3164,14 +3164,14 @@ bool WalkingModule::checkWalkingStatus()
         yInfo() << "!! Change status to DSStable";
       }
     }
-    else if(leftWrench(2) > m_FTThreshold && rightWrench(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS || m_walkingStatus == WalkingStatus::DSStable))
+    else if(m_leftWrench.getLinearVec3()(2) > m_FTThreshold && m_rightWrench.getLinearVec3()(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DS || m_walkingStatus == WalkingStatus::DSStable))
     {
       m_walkingStatus = WalkingStatus::DS;
       yInfo() << "!! Change status to DS";
       m_ortChanged = false;
       m_DSSwitchedOut = true;
     }
-    else if(leftWrench(2) > m_FTThreshold && rightWrench(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
+    else if(m_leftWrench.getLinearVec3()(2) > m_FTThreshold && m_rightWrench.getLinearVec3()(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
     {
         m_prevWalkingStatus = m_walkingStatus;
         m_walkingStatus = WalkingStatus::LSS;
@@ -3179,7 +3179,7 @@ bool WalkingModule::checkWalkingStatus()
         m_ortChanged = false;
         m_DSSwitchedOut = true;
     }
-    else if(leftWrench(2) <= m_FTThreshold && rightWrench(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
+    else if(m_leftWrench.getLinearVec3()(2) <= m_FTThreshold && m_rightWrench.getLinearVec3()(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
     {
       m_prevWalkingStatus = m_walkingStatus;
       m_walkingStatus = WalkingStatus::RSS;
@@ -3218,7 +3218,7 @@ bool WalkingModule::checkWalkingStatus()
   return true;
 }
 
-void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces)
+void WalkingModule::computeFootForces(iDynTree::Wrench& wrench, yarp::sig::Vector& forces)
 {
   // Foot dimension
   double d = m_footWidth;
@@ -3232,8 +3232,8 @@ void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vect
   
   iDynTree::Vector2 CoP;
   CoP.zero();
-  CoP(0) = -wrench(4)/wrench(2);
-  CoP(1) = wrench(3)/wrench(2);
+  CoP(0) = -wrench.getAngularVec3()(1)/wrench.getLinearVec3()(2);
+  CoP(1) = wrench.getAngularVec3()(0)/wrench.getLinearVec3()(2);
     
   if(CoP(0) > 0)
     CoP(0) = std::min(L/2,CoP(0));
@@ -3246,10 +3246,10 @@ void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vect
   
   double alpha4 = (std::max(0.0, -CoP(0)/L - CoP(1)/d)+std::min(0.5-CoP(1)/d, 0.5-CoP(0)/L))/2;
   
-  f4 = alpha4*wrench(2);
-  f1 = f4 + wrench(3)/d - wrench(4)/L;
-  f2 = -f4 + wrench(2)/2 - wrench(3)/d;
-  f3 = -f4 + wrench(2)/2 + wrench(4)/L;
+  f4 = alpha4*wrench.getLinearVec3()(2);
+  f1 = f4 + wrench.getAngularVec3()(0)/d - wrench.getAngularVec3()(1)/L;
+  f2 = -f4 + wrench.getLinearVec3()(2)/2 - wrench.getAngularVec3()(0)/d;
+  f3 = -f4 + wrench.getLinearVec3()(2)/2 + wrench.getAngularVec3()(1)/L;
   
   forces(0) = f1;
   forces(1) = f2;
@@ -3260,7 +3260,7 @@ void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vect
     yInfo() << "-------Forces: " << forces.toString();
 }
 
-bool WalkingModule::checkFeetForces(yarp::sig::Vector& leftWrench, yarp::sig::Vector& rightWrench)
+bool WalkingModule::checkFeetForces(iDynTree::Wrench& leftWrench, iDynTree::Wrench& rightWrench)
 {
   yarp::sig::Vector forcesL(4);
   yarp::sig::Vector forcesR(4);
