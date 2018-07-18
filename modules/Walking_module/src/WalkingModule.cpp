@@ -381,10 +381,8 @@ bool WalkingModule::checkLeftContactActivationConditions()
     if (m_leftWrench.getLinearVec3()(2) > m_minNormalForce) { //condition on the normal force satisfied
         if(m_useIMUDS && m_updateOnceDS)
         {
-          if(m_walkingStatus == WalkingStatus::DSStable)
-          {
-            return true;
-          }
+          if((m_useFTDetection?checkFeetForces(m_leftWrench,m_rightWrench):true) && (m_useVelocityDetection?checkFeetVelocities():true) && (m_useSkin?checkSkinContact(WalkingStatus::LSS):true))
+              return true;
         }
         else
         {
@@ -404,10 +402,8 @@ bool WalkingModule::checkRightContactActivationConditions()
   if (m_rightWrench.getLinearVec3()(2) > m_minNormalForce) { //condition on the normal force satisfied
       if(m_useIMUDS && m_updateOnceDS)
       {
-        if(m_walkingStatus == WalkingStatus::DSStable)
-        {
+        if((m_useFTDetection?checkFeetForces(m_leftWrench,m_rightWrench):true) && (m_useVelocityDetection?checkFeetVelocities():true) && (m_useSkin?checkSkinContact(WalkingStatus::RSS):true))
           return true;
-        }
       }
       else
       {
