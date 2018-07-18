@@ -235,6 +235,10 @@ class WalkingModule:
     double m_desiredZMPY;
     double m_footLength;
     double m_footWidth;
+    iDynTree::Position m_leftCenterOffset;
+    iDynTree::Position m_rightCenterOffset;
+    iDynTree::Transform m_leftCenterOffsetTransform;
+    iDynTree::Transform m_rightCenterOffsetTransform;
     
     // IMU ports
     yarp::os::BufferedPort<yarp::os::Bottle> m_RFootIMUPort;

@@ -660,6 +660,15 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
         m_forcesThreshold = config.check("FTForcesThreshold", yarp::os::Value(10)).asDouble();
         m_footLength = config.check("footLength", yarp::os::Value(0.2)).asDouble();
         m_footWidth = config.check("footWidth", yarp::os::Value(0.1)).asDouble();
+        yarp::os::Bottle* leftOffset = config.find("centerOffsetLSole").asList();
+        yarp::os::Bottle* rightOffset = config.find("centerOffsetRSole").asList();
+        for(unsigned int i = 0; i < 3; i++)
+        {
+          m_leftCenterOffset(i) = leftOffset->get(i).asDouble();
+          m_rightCenterOffset(i) = rightOffset->get(i).asDouble();
+        }
+        m_leftCenterOffsetTransform = iDynTree::Transform(iDynTree::Rotation::Identity(),m_leftCenterOffset);
+        m_rightCenterOffsetTransform = iDynTree::Transform(iDynTree::Rotation::Identity(),m_rightCenterOffset);
       }
       
       m_useVelocityDetection = config.check("useVelocityDetection", yarp::os::Value(false)).asBool();
@@ -3253,8 +3262,10 @@ bool WalkingModule::checkFeetForces(iDynTree::Wrench& leftWrench, iDynTree::Wren
 {
   yarp::sig::Vector forcesL(4);
   yarp::sig::Vector forcesR(4);
-  computeFootForces(leftWrench,forcesL);
-  computeFootForces(rightWrench,forcesR);
+  iDynTree::Wrench leftWrenchCenter = m_leftCenterOffsetTransform*leftWrench;
+  iDynTree::Wrench rightWrenchCenter = m_leftCenterOffsetTransform*rightWrench;
+  computeFootForces(leftWrenchCenter,forcesL);
+  computeFootForces(rightWrenchCenter,forcesR);
   if(forcesL(0) > m_forcesThreshold && forcesL(1) > m_forcesThreshold && forcesL(2) > m_forcesThreshold && forcesL(3) > m_forcesThreshold && 
     forcesR(0) > m_forcesThreshold && forcesR(1) > m_forcesThreshold && forcesR(2) > m_forcesThreshold && forcesR(3) > m_forcesThreshold)
     return true;
