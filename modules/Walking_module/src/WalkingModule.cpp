@@ -3162,7 +3162,7 @@ bool WalkingModule::checkWalkingStatus()
     }
     else if(m_leftWrench.getLinearVec3()(2) > m_FTThreshold && m_rightWrench.getLinearVec3()(2) <= m_FTThreshold && !(m_walkingStatus == WalkingStatus::LSS))
     {
-        m_prevWalkingStatus = m_walkingStatus;
+        m_prevWalkingStatus = WalkingStatus::RSS;
         m_walkingStatus = WalkingStatus::LSS;
         yInfo() << "!! Change status to LSS";
         m_ortChanged = false;
@@ -3170,7 +3170,7 @@ bool WalkingModule::checkWalkingStatus()
     }
     else if(m_leftWrench.getLinearVec3()(2) <= m_FTThreshold && m_rightWrench.getLinearVec3()(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::RSS))
     {
-      m_prevWalkingStatus = m_walkingStatus;
+      m_prevWalkingStatus = WalkingStatus::LSS;
       m_walkingStatus = WalkingStatus::RSS;
       yInfo() << "!! Change status to RSS";
       m_ortChanged = false;
@@ -3384,6 +3384,7 @@ bool WalkingModule::checkSkinContact(std::string link)
       }
     }
     
+    // check patches on the back
     for(int i = backPatches; i < skinOrder->size(); i++)
     {
       int currSkinIdx = skinOrder->get(i).asInt();
