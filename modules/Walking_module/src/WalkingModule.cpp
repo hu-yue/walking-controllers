@@ -658,6 +658,8 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
         yInfo() << "Using FT for contact detection.";
         m_FTThreshold = config.check("FTThreshold", yarp::os::Value(80)).asDouble();
         m_forcesThreshold = config.check("FTForcesThreshold", yarp::os::Value(10)).asDouble();
+        m_footLength = config.check("footLength", yarp::os::Value(0.2)).asDouble();
+        m_footWidth = config.check("footWidth", yarp::os::Value(0.1)).asDouble();
       }
       
       m_useVelocityDetection = config.check("useVelocityDetection", yarp::os::Value(false)).asBool();
@@ -3219,8 +3221,8 @@ bool WalkingModule::checkWalkingStatus()
 void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vector& forces)
 {
   // Foot dimension
-  double d = 0.06;
-  double L = 0.10;
+  double d = m_footWidth;
+  double L = m_footLength;
   // compute the 4 forces of the foot
   double f1,f2,f3,f4;
   f1 = 0;
@@ -3232,8 +3234,19 @@ void WalkingModule::computeFootForces(yarp::sig::Vector& wrench, yarp::sig::Vect
   CoP.zero();
   CoP(0) = -wrench(4)/wrench(2);
   CoP(1) = wrench(3)/wrench(2);
+    
+  if(CoP(0) > 0)
+    CoP(0) = std::min(L/2,CoP(0));
+  else if(CoP(0) < 0)
+    CoP(0) = std::max(-L/2,CoP(0));
+  if(CoP(1) > 0)
+    CoP(1) = std::min(d/2,CoP(1));
+  else if(CoP(1) < 0)
+    CoP(1) = std::max(-d/2,CoP(1));
   
-  f4 = 0.5*(std::max(0.0,-CoP(1)/d-CoP(0)/L)+std::min(0.5-CoP(1)/d,0.5-CoP(0)/L))*wrench(2);
+  double alpha4 = (std::max(0.0, -CoP(0)/L - CoP(1)/d)+std::min(0.5-CoP(1)/d, 0.5-CoP(0)/L))/2;
+  
+  f4 = alpha4*wrench(2);
   f1 = f4 + wrench(3)/d - wrench(4)/L;
   f2 = -f4 + wrench(2)/2 - wrench(3)/d;
   f3 = -f4 + wrench(2)/2 + wrench(4)/L;
@@ -3416,10 +3429,6 @@ bool WalkingModule::parseSkinData()
   if(m_useSkinTaxelPosition && skinContactListiCub == NULL)
     return true;
 
-  //m_skinContactListiCub.clear();
-  //m_skinContactListLFoot.clear();
-  //m_skinContactListRFoot.clear();
-
   m_skinDataRightFoot = *skinRight;
   m_skinDataLeftFoot = *skinLeft;
   if(m_useSkinTaxelPosition)
@@ -3428,8 +3437,6 @@ bool WalkingModule::parseSkinData()
     m_skinContactListRFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::RIGHT_FOOT];
     m_skinContactListLFoot = m_skinContactListiCub.splitPerSkinPart()[iCub::skinDynLib::SkinPart::LEFT_FOOT];
   }
-
-  yInfo() << "-------Parsed skin data. ";
 
   return true;
 }

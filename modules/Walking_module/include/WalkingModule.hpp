@@ -233,6 +233,8 @@ class WalkingModule:
     double m_planeKy;
     double m_desiredZMPX;
     double m_desiredZMPY;
+    double m_footLength;
+    double m_footWidth;
     
     // IMU ports
     yarp::os::BufferedPort<yarp::os::Bottle> m_RFootIMUPort;
