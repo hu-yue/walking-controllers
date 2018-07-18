@@ -379,11 +379,12 @@ bool WalkingModule::configureReactiveGainScheduling(const yarp::os::Searchable &
 bool WalkingModule::checkLeftContactActivationConditions()
 {
     if (m_leftWrench.getLinearVec3()(2) > m_minNormalForce) { //condition on the normal force satisfied
-        double localZMPNorm, xZMP, yZMP;
-        xZMP = -m_leftWrench.getAngularVec3()(1) / m_leftWrench.getLinearVec3()(2);
-        yZMP = m_leftWrench.getAngularVec3()(0) / m_leftWrench.getLinearVec3()(2);
-        localZMPNorm = std::sqrt(std::pow(xZMP, 2) + std::pow(yZMP, 2));
-        return (localZMPNorm < m_localCOPThreshold); //condition on the cop satisfied
+//         double localZMPNorm, xZMP, yZMP;
+//         xZMP = -m_leftWrench.getAngularVec3()(1) / m_leftWrench.getLinearVec3()(2);
+//         yZMP = m_leftWrench.getAngularVec3()(0) / m_leftWrench.getLinearVec3()(2);
+//         localZMPNorm = std::sqrt(std::pow(xZMP, 2) + std::pow(yZMP, 2));
+//         return (localZMPNorm < m_localCOPThreshold); //condition on the cop satisfied
+      return true;
     }
     return false;
 }
@@ -391,11 +392,12 @@ bool WalkingModule::checkLeftContactActivationConditions()
 bool WalkingModule::checkRightContactActivationConditions()
 {
     if (m_rightWrench.getLinearVec3()(2) > m_minNormalForce) { //condition on the normal force satisfied
-        double localZMPNorm, xZMP, yZMP;
-        xZMP = -m_rightWrench.getAngularVec3()(1) / m_rightWrench.getLinearVec3()(2);
-        yZMP = m_rightWrench.getAngularVec3()(0) / m_rightWrench.getLinearVec3()(2);
-        localZMPNorm = std::sqrt(std::pow(xZMP, 2) + std::pow(yZMP, 2));
-        return (localZMPNorm < m_localCOPThreshold); //condition on the cop satisfied
+//         double localZMPNorm, xZMP, yZMP;
+//         xZMP = -m_rightWrench.getAngularVec3()(1) / m_rightWrench.getLinearVec3()(2);
+//         yZMP = m_rightWrench.getAngularVec3()(0) / m_rightWrench.getLinearVec3()(2);
+//         localZMPNorm = std::sqrt(std::pow(xZMP, 2) + std::pow(yZMP, 2));
+//         return (localZMPNorm < m_localCOPThreshold); //condition on the cop satisfied
+      return true;
     }
     return false;
 }
