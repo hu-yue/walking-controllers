@@ -214,6 +214,7 @@ class WalkingModule:
     bool m_useFTDetection;
     double m_FTThreshold;
     double m_forcesThreshold;
+    bool m_useVelocityDetection;
     double m_velThreshold;
     bool m_useSkin;
     
@@ -265,6 +266,9 @@ class WalkingModule:
     int m_skinVecSize;
     double m_skinPercentileThreshold;
     int m_skinTaxelsThreshold;
+    bool m_useSkinTaxelPosition;
+    std::string m_leftTaxelFile;
+    std::string m_rightTaxelFile;
     
     // Raw skin data
     yarp::sig::Vector* m_skinDataRightFoot;
