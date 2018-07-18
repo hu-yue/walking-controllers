@@ -3069,10 +3069,10 @@ bool WalkingModule::parseIMUData()
     } 
     else
     {
-      yarp::os::Bottle* imuRInput = m_RFootIMUPort.read(false)->get(3).asList()->get(0).asList()->get(0).asList();
+      yarp::os::Bottle* imuRInput = m_RFootIMUPort.read(false);//->get(3).asList()->get(0).asList()->get(0).asList();
       if(imuRInput == NULL)
         return true;
-      yarp::os::Bottle* imuLInput = m_LFootIMUPort.read(false)->get(3).asList()->get(0).asList()->get(0).asList();
+      yarp::os::Bottle* imuLInput = m_LFootIMUPort.read(false);//->get(3).asList()->get(0).asList()->get(0).asList();
       if(imuLInput == NULL)
         return true;
 
@@ -3086,6 +3086,9 @@ bool WalkingModule::parseIMUData()
         yError() << "Could not read left foot IMU data properly.";
         return false;
       }
+      
+      imuRInput = imuRInput->get(3).asList()->get(0).asList()->get(0).asList();
+      imuLInput = imuLInput->get(3).asList()->get(0).asList()->get(0).asList();
       
       m_RFootIMUData[0] = iDynTree::deg2rad(-imuRInput->get(1).asDouble());
       m_RFootIMUData[1] = iDynTree::deg2rad(-imuRInput->get(2).asDouble());
@@ -3129,20 +3132,6 @@ bool WalkingModule::parseIMUData()
 
 bool WalkingModule::checkWalkingStatus()
 {
-  // use 4 forces
-//   yarp::sig::Vector leftWrench(m_leftWrenchInput.size());
-//   yarp::sig::Vector rightWrench(m_rightWrenchInput.size());
-  
-//   if(m_useWrenchFilter)
-//   {
-//     leftWrench = m_leftWrenchInputFiltered;
-//     rightWrench = m_rightWrenchInputFiltered;
-//   }
-//   else
-//   {
-//     leftWrench = m_leftWrenchInput;
-//     rightWrench = m_rightWrenchInput;
-//   }
   // check walking status according to wrench measurements if useFTDetection
   if(m_useFTDetection || m_useVelocityDetection || m_useSkin)
   {
