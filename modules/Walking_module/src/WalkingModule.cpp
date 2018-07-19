@@ -1649,7 +1649,8 @@ bool WalkingModule::updateModule()
                                       rightFoot.getPosition(), rightFoot.getRotation().asRPY(),
                                       m_leftTrajectory.front().getPosition(), m_leftTrajectory.front().getRotation().asRPY(),
                                       m_rightTrajectory.front().getPosition(), m_rightTrajectory.front().getRotation().asRPY(),
-                                      errorL, errorR, m_inertial_R_worldFrame.asRPY(), m_rotLFootIMU.asRPY(), m_rotRFootIMU.asRPY());
+                                      errorL, errorR, m_inertial_R_worldFrame.asRPY(), m_rotLFootIMU.asRPY(), m_rotRFootIMU.asRPY(),
+                                      m_LFootIMUData, m_RFootIMUData);
 
             // m_walkingLogger->sendData(m_dqDesired_osqp, m_dqDesired_qpOASES);
         }
@@ -2582,6 +2583,8 @@ bool WalkingModule::startWalking()
                     "rworld_roll", "rworld_pitch", "rworld_yaw",
                     "lf_imu_roll", "lf_imu_pitch", "lf_imu_yaw",
                     "rf_imu_roll", "rf_imu_pitch", "rf_imu_yaw",
+                    "lf_imu_roll_raw", "lf_imu_pitch_raw", "lf_imu_yaw_raw",
+                    "rf_imu_roll_raw", "rf_imu_pitch_raw", "rf_imu_yaw_raw"
         });
         // "torso_pitch", "torso_roll", "torso_yaw",
         // "l_shoulder_pitch", "l_shoulder_roll", "l_shoulder_yaw", "l_elbow",
