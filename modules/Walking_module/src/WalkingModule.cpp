@@ -671,10 +671,10 @@ bool WalkingModule::configureIMU(const yarp::os::Searchable& config)
       }
       
       m_useFTDetection = config.check("useFTDetection", yarp::os::Value(false)).asBool();
+      m_FTThreshold = config.check("FTThreshold", yarp::os::Value(80)).asDouble();
       if(m_useFTDetection)
       {
         yInfo() << "Using FT for contact detection.";
-        m_FTThreshold = config.check("FTThreshold", yarp::os::Value(80)).asDouble();
         m_forcesThreshold = config.check("FTForcesThreshold", yarp::os::Value(10)).asDouble();
         m_footLength = config.check("footLength", yarp::os::Value(0.2)).asDouble();
         m_footWidth = config.check("footWidth", yarp::os::Value(0.1)).asDouble();
@@ -810,7 +810,7 @@ bool WalkingModule::configureSkin(const yarp::os::Searchable& config)
       yInfo() << "Loaded skin taxel positions for right foot.";
     }
     
-    if(setTaxelPosesFromFile(m_leftTaxelFile, m_skinPartLFoot))
+    if(!setTaxelPosesFromFile(m_leftTaxelFile, m_skinPartLFoot))
     {
       yError() << "Impossible to load skin taxel positions for left foot.";
       return false;
@@ -3159,6 +3159,7 @@ bool WalkingModule::parseIMUData()
 
 bool WalkingModule::checkWalkingStatus()
 {
+  //yInfo() << "######### Checking walking status";
   // check walking status according to wrench measurements if useFTDetection
   if(m_useFTDetection || m_useVelocityDetection || m_useSkin)
   {
@@ -3172,6 +3173,7 @@ bool WalkingModule::checkWalkingStatus()
         m_walkingStatus = WalkingStatus::Unknown;
     else if(m_leftWrench.getLinearVec3()(2) > m_FTThreshold && m_rightWrench.getLinearVec3()(2) > m_FTThreshold && !(m_walkingStatus == WalkingStatus::DSStable) && m_walkingStatus == WalkingStatus::DS)
     {
+      //yInfo() << "######### Checking walking status DS.";
       if((m_useFTDetection?checkFeetForces(m_leftWrench,m_rightWrench):true) && (m_useVelocityDetection?checkFeetVelocities():true) && (m_useSkin?checkSkinContact(contactStatus):true))
       {
         m_walkingStatus = WalkingStatus::DSStable;
@@ -3338,10 +3340,17 @@ bool WalkingModule::checkFeetVelocities()
 
 bool WalkingModule::checkSkinContact(WalkingStatus status)
 {
+  yInfo() << "Checking skin contacts";
   if(status == WalkingStatus::RSS)
+  {
+    yInfo() << "Checking contacts on right foot.";
     return checkSkinContact("r_sole");
+  }
   else if(status == WalkingStatus::LSS)
+  {
+    yInfo() << "Checking contacts on left foot.";
     return checkSkinContact("l_sole");
+  }
   return false;
 }
 
@@ -3389,6 +3398,8 @@ bool WalkingModule::checkSkinContact(std::string link)
           activeTaxelsBackRight++;
       }
     }
+
+    //yInfo() << "-------- Checked contact with skin with active taxels: " << activeTaxelsFrontLeft << ", " << activeTaxelsFrontRight << ", " << activeTaxelsBackLeft << ", " << activeTaxelsBackRight;  
     
     if(activeTaxelsFrontLeft > taxelThreshold && activeTaxelsFrontRight > taxelThreshold && activeTaxelsBackLeft > taxelThreshold && activeTaxelsBackRight > taxelThreshold)
       stableContact = true;
@@ -3436,7 +3447,7 @@ bool WalkingModule::checkSkinContact(std::string link)
           activeTaxelsBack++;
       }
     }
-    yInfo() << "-------- Checked contact with skin.";  
+    //yInfo() << "-------- Checked contact with skin with active taxels: " << activeTaxelsFront << ", " << activeTaxelsBack;  
     
     if(activeTaxelsFront > m_skinTaxelsThreshold && activeTaxelsBack > m_skinTaxelsThreshold)
       stableContact = true;
